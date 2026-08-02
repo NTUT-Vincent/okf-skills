@@ -1,0 +1,92 @@
+name: Temporary TWFoodMCP OKF E2E
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-visualize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout workflow branch
+        uses: actions/checkout@v4
+
+      - name: Checkout company-safe OKF skills
+        uses: actions/checkout@v4
+        with:
+          repository: NTUT-Vincent/okf-skills
+          ref: local-only-okf-skill
+          path: okf-skills
+
+      - name: Checkout TWFoodMCP main
+        uses: actions/checkout@v4
+        with:
+          repository: NTUT-Vincent/TWFoodMCP
+          ref: main
+          path: twfood
+
+      - name: Prepare Python dependency
+        run: python -m pip install --disable-pip-version-check PyYAML
+
+      - name: Run OKF validation and visualization
+        shell: bash
+        run: |
+          mkdir -p results
+          find twfood/knowledge -type f -name '*.md' | sort > results/knowledge-files.txt
+          printf 'markdown_files=%s\n' "$(wc -l < results/knowledge-files.txt)" > results/summary.txt
+
+          set +e
+          python okf-skills/skills/validate/scripts/okf_validate.py twfood/knowledge --json \
+            > results/validate.json 2> results/validate.stderr.txt
+          validate_code=$?
+          printf 'validate_exit_code=%s\n' "$validate_code" >> results/summary.txt
+
+          python okf-skills/skills/visualize/scripts/okf_visualize.py twfood/knowledge \
+            -o results/twfoodmcp-viz.html --layout concentric \
+            > results/visualize.stdout.txt 2> results/visualize.stderr.txt
+          visualize_code=$?
+          printf 'visualize_exit_code=%s\n' "$visualize_code" >> results/summary.txt
+          set -e
+
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          results = Path('results')
+          html = results / 'twfoodmcp-viz.html'
+          checks = {
+              'html_exists': html.exists(),
+              'html_size_bytes': html.stat().st_size if html.exists() else 0,
+              'external_script_src_count': 0,
+              'external_stylesheet_count': 0,
+              'browser_fetch_count': 0,
+              'cdn_keyword_count': 0,
+          }
+          if html.exists():
+              text = html.read_text(encoding='utf-8')
+              checks['external_script_src_count'] = len(re.findall(r'<script[^>]+src=', text, re.I))
+              checks['external_stylesheet_count'] = len(re.findall(r'<link[^>]+rel=["\']stylesheet["\']', text, re.I))
+              checks['browser_fetch_count'] = len(re.findall(r'\bfetch\s*\(', text))
+              checks['cdn_keyword_count'] = len(re.findall(r'cdn\.|jsdelivr|unpkg', text, re.I))
+          (results / 'offline-checks.json').write_text(
+              json.dumps(checks, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+          du -sh twfood/knowledge >> results/summary.txt
+          du -sh results/twfoodmcp-viz.html 2>/dev/null >> results/summary.txt || true
+
+      - name: Upload test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: twfoodmcp-okf-e2e
+          path: results/
+          if-no-files-found: error
+          retention-days: 1
