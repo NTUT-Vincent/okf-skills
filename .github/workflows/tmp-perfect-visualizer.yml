@@ -1,6 +1,9 @@
 name: Build and test improved offline visualizer
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - tmp/perfect-offline-visualizer-20260802
@@ -16,6 +19,7 @@ jobs:
       - name: Checkout temporary branch
         uses: actions/checkout@v4
         with:
+          ref: tmp/perfect-offline-visualizer-20260802
           fetch-depth: 0
 
       - name: Checkout complete TWFoodMCP knowledge bundle
