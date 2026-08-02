@@ -24,7 +24,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path('skills/visualize/scripts/okf_visualize.py')
           text = path.read_text(encoding='utf-8')
@@ -40,31 +39,22 @@ jobs:
               raise SystemExit(f'CSS marker count: {text.count(css_marker)}')
           text = text.replace(css_marker, css_insert, 1)
 
-          header_pattern = re.compile(
-              r'(panel\.innerHTML\s*=\s*`\s*)<h1>\$\{escapeHtml\(node\.title\)\}</h1>\s*<div>\$\{escapeHtml\(node\.id\)\}</div>',
-              re.S,
-          )
-          text, count = header_pattern.subn(
-              r'\1<div class="concept-path"><strong>Selected concept</strong><code>${escapeHtml(node.id)}</code></div>\n    <h1>${escapeHtml(node.title)}</h1>',
-              text,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit(f'header replacement count: {count}')
+          header_marker = '<h1>${escapeHtml(node.title)}</h1>\n    <div>${escapeHtml(node.id)}</div>'
+          header_insert = '<div class="concept-path"><strong>Selected concept</strong><code>${escapeHtml(node.id)}</code></div>\n    <h1>${escapeHtml(node.title)}</h1>'
+          if text.count(header_marker) != 1:
+              raise SystemExit(f'header marker count: {text.count(header_marker)}')
+          text = text.replace(header_marker, header_insert, 1)
 
-          body_pattern = re.compile(
-              r'(<div class="body">\$\{renderMarkdown\(node\.body\)\}</div>`;\s*)(panel\.querySelectorAll\("\[data-open\]"\))',
-              re.S,
-          )
-          panel_lines = '''\1panel.scrollTop = 0;
+          body_marker = '<div class="body">${renderMarkdown(node.body)}</div>`;'
+          panel_insert = '''<div class="body">${renderMarkdown(node.body)}</div>`;
+          panel.scrollTop = 0;
           panel.dataset.selected = id;
           panel.classList.remove("panel-updated");
           void panel.offsetWidth;
-          panel.classList.add("panel-updated");
-          \2'''
-          text, count = body_pattern.subn(panel_lines, text, count=1)
-          if count != 1:
-              raise SystemExit(f'panel replacement count: {count}')
+          panel.classList.add("panel-updated");'''
+          if text.count(body_marker) != 1:
+              raise SystemExit(f'body marker count: {text.count(body_marker)}')
+          text = text.replace(body_marker, panel_insert, 1)
 
           path.write_text(text, encoding='utf-8')
           PY
