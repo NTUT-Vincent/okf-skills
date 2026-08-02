@@ -1,81 +1,97 @@
-# OKF Local-Only Skill
+# OKF Core Skills
 
-這個分支是從原始 `okf-skills` 精簡出的 **純本地版本**，用途是讓 Claude Code 或其他支援 Agent Skill 的工具，直接建立、維護、讀取與人工檢查 Open Knowledge Format (OKF) v0.2 bundle。
+這個分支將原始 `okf-skills` 精簡成可直接複製使用的核心版本。
 
-`skills/okf/SKILL.md` 以原版內容為基準，保留原本的章節順序、核心措辭、觸發描述、OKF 規則與 produce / maintain / consume 流程；只有涉及執行腳本、安裝套件、外部連線或執行 computation 的段落做必要修改。
+核心功能維持原版，不再把 `validate` 與 `visualize` 視為可移除的周邊：
 
-## 這個版本保留什麼
+- `okf`：建立、維護與讀取 OKF bundle
+- `validate`：以 deterministic Python checker 驗證 OKF v0.2，並支援 v0.1 → v0.2 migration
+- `visualize`：將 bundle 產生為互動式 `viz.html`
+- `okf_init.py`：建立初始 bundle
 
-- OKF v0.2 的 canonical `SPEC.md`
-- 建立、維護、讀取 OKF bundle 的原始 skill 主體內容
-- 原版的 trigger 描述與 produce / maintain / consume 結構
-- concept、index、log 範本
-- provenance、trust、lifecycle、attestation 等 v0.2 撰寫規則
-- 不依賴程式執行的本地結構檢查清單
+上述三份 `SKILL.md` 與三支 Python script 直接使用原始專案內容，沒有重新撰寫或改變原本流程。
 
-## 這個版本移除什麼
+## 保留的檔案
 
-- Python 初始化、驗證與視覺化腳本
-- `Bash` tool 權限
-- `uv`、`pip`、PyPI 套件安裝
-- Claude plugin / marketplace 包裝
-- `skills.sh` / `npx` 安裝流程
-- GitHub Action、CI workflow、測試、benchmark、demo 與 GitHub Pages
-- 會在瀏覽器載入 CDN JavaScript 的視覺化頁面
-- 自動執行 Attested Computation、SQL、資料庫或外部 executor 的行為
+```text
+skills/
+├── okf/
+│   ├── SKILL.md
+│   ├── scripts/okf_init.py
+│   ├── reference/
+│   │   ├── SPEC.md
+│   │   └── APACHE-2.0.txt
+│   └── templates/
+│       ├── concept.md
+│       ├── index.md
+│       └── log.md
+├── validate/
+│   ├── SKILL.md
+│   └── scripts/okf_validate.py
+└── visualize/
+    ├── SKILL.md
+    └── scripts/okf_visualize.py
+```
 
-因此，本分支內的 skill 本身只會要求 Agent 使用本地的 `Read`、`Write`、`Edit`、`Grep`、`Glob` 操作 Markdown 檔案。
+另外保留：
+
+- `LICENSE`
+- `NOTICE`
+- `EXTERNAL-NETWORK-AUDIT.md`
+
+## 移除的周邊
+
+這個分支移除不影響三個核心 skill 使用的發行與展示內容：
+
+- Claude plugin / marketplace manifests
+- GitHub Action 與 CI workflow
+- benchmark 與測試資料
+- GitHub Pages、demo、預先產生的 HTML 與圖片
+- sample bundle
+- repo 自身的 `.okf/` dogfooding 文件
+- changelog、Makefile 與自動 upkeep snippet
 
 ## 安裝
 
-把 `skills/okf` 整個資料夾複製到你的專案：
+將整個 `skills/` 複製到 Agent 工具支援的 skills 目錄。例如 Claude Code 專案：
 
 ```text
-<your-project>/.claude/skills/okf/
+<your-project>/.claude/skills/
+├── okf/
+├── validate/
+└── visualize/
 ```
 
-或放到你使用的 Agent 工具所支援的 skills 目錄。最終需確保以下檔案仍保持相對位置：
+三個資料夾都應保留，因為主 `okf` skill 會呼叫 companion `validate` skill，並使用自己的 `okf_init.py`。
+
+## 使用
 
 ```text
-okf/
-├── SKILL.md
-├── reference/
-│   ├── SPEC.md
-│   └── APACHE-2.0.txt
-└── templates/
-    ├── concept.md
-    ├── index.md
-    └── log.md
-```
-
-## 使用方式
-
-可直接要求 Agent：
-
-```text
-使用 OKF skill，將這個 repo 的系統架構整理到 .okf/。
+使用 OKF skill，將這個 repo 的架構整理到 .okf/。
 ```
 
 ```text
-使用 OKF skill，更新 .okf/ 中受到這次程式修改影響的概念。
+/validate .okf --strict
 ```
 
 ```text
-使用 OKF skill，先讀取 .okf/index.md，再回答這個系統為什麼採用目前架構。
+/visualize .okf
 ```
 
-原版對存在 OKF bundle 的 repository 所描述的觸發情境仍保留，但本地版不具有 Bash、hook、CI 或背景程序，因此不會自行執行腳本或對外連線。
+實際 slash command 名稱會依宿主工具的 skill namespace 而異；原專案的 Claude plugin 使用 `/okf:okf`、`/okf:validate`、`/okf:visualize`。
 
-## 網路與外部 API
+## 執行需求與網路注意事項
 
-完整盤點請看 [`EXTERNAL-NETWORK-AUDIT.md`](EXTERNAL-NETWORK-AUDIT.md)。
+Python scripts 使用 PyYAML。原版建議透過 `uv run` 執行，也提供 `pip install pyyaml` fallback。
 
-重點：
+核心 Python 邏輯本身不會直接呼叫 HTTP API，但以下情況可能對外連線：
 
-- `resource`、`sources[].resource` 可以包含 URL，但在此版本中只當作 metadata 儲存，不會自動開啟或抓取。
-- `Attested Computation` 只記錄 contract，不執行 `executor`、SQL、script 或 API。
-- 若宿主 Agent 在 skill 之外仍具有 browser、MCP 或 network tool，那是宿主權限；本 skill 不會主動要求使用它們。需要硬隔離時，仍應在宿主工具層停用網路與外部 connector。
+- `uv` 或 `pip` 在本機沒有 PyYAML 時，可能連到 PyPI 或設定的 package registry。
+- 開啟 visualizer 產生的 `viz.html` 時，瀏覽器會向 jsDelivr 載入 Cytoscape、marked 與 DOMPurify。
+- OKF concept 宣告的 Attested Computation 可能指向資料庫、SQL executor、script 或外部 API；是否執行取決於 Agent 與 bundle 內容。
+
+完整盤點請見 [`EXTERNAL-NETWORK-AUDIT.md`](EXTERNAL-NETWORK-AUDIT.md)。
 
 ## License
 
-本精簡版保留上游專案的 MIT License。Vendored OKF specification 來自 Google Cloud reference repository，保留原始 Apache-2.0 標示與授權文字。
+本精簡版本保留上游專案的 MIT License。Vendored OKF specification 來自 Google Cloud reference repository，並保留原始 Apache-2.0 授權與 NOTICE。
