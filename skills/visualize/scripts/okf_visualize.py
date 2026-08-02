@@ -1,430 +1,455 @@
 #!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["pyyaml>=6"]
-# ///
-"""Render an Open Knowledge Format (OKF) bundle as a single self-contained,
-interactive HTML graph (`viz.html`). No backend, no install on the viewing side,
-no data leaves the page — concepts become nodes (coloured by `type`, sized by
-body length), markdown links and bundle-internal `sources` become edges, and
-clicking a node opens a wiki-style panel with its rendered markdown, OKF v0.2
-provenance/trust/lifecycle metadata, outgoing links, and "Cited by" backlinks.
+"""Render an OKF bundle as a single offline HTML graph.
 
-Features: force/concentric/breadth-first/circle/grid layouts, per-type filter,
-free-text search, neighbour highlight, clickable cross-links and backlinks.
+This company-safe variant performs local file processing only. It does not use
+HTTP clients, fetch remote assets, import browser packages, or generate external
+script/style references. The resulting HTML uses only embedded CSS and vanilla
+JavaScript.
 
-The default layout is force (cose) up to AUTO_COSE_MAX concepts, then the linear
-concentric layout — force-directed cost grows roughly quadratically with node
-count and freezes the page on large bundles. An explicit --layout always wins.
+PyYAML must already be available in the approved Python environment.
 
-Run:  uv run okf_visualize.py <bundle-dir> [-o viz.html]
+Run:
+    python3 okf_visualize.py <bundle-dir> [-o viz.html]
+        [--layout cose|concentric|grid] [--max-nodes N]
 """
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sys
-from pathlib import Path
+from datetime import date
+from pathlib import Path, PurePosixPath
 
-import yaml
+try:
+    import yaml
+except ImportError:
+    print(
+        "error: PyYAML is required but is not installed in this Python environment. "
+        "Use an internally approved environment or package source.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
 
 RESERVED = {"index.md", "log.md"}
-# Force (cose) layout froze the page for ~32 s at ~2k concepts (measured in
-# Chrome); the linear layouts load the same bundle in under 2 s. Past this size
-# the default switches to concentric, and the in-page layout picker asks before
-# running force. An explicit --layout (or ?layout=) still wins.
-AUTO_COSE_MAX = 1000
-# Above this the page is slow on any layout (23k concepts measured: ~27 s load,
-# ~650 MB heap) and reads as a hairball — warn and suggest rendering a subtree.
-SCALE_WARN = 5000
-FENCE = re.compile(r"^(```|~~~)")
-LINK = re.compile(r"(?<!\!)\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+LINK_RE = re.compile(r"(?<!\!)\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+HTML_TEMPLATE = r'''<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --muted: #667085;
+  --line: #d0d5dd;
+  --accent: #3b6fd8;
+  --accent-soft: #e8eefc;
+  --danger-soft: #fbe9e7;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111318;
+    --panel: #191c23;
+    --text: #e5e7eb;
+    --muted: #9aa4b2;
+    --line: #303642;
+    --accent: #8ab4ff;
+    --accent-soft: #202d49;
+    --danger-soft: #3a2222;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+.app { min-height: 100%; display: grid; grid-template-rows: auto 1fr; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; padding: 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.toolbar label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.toolbar input, .toolbar select { min-width: 160px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); color: var(--text); }
+.summary { margin-left: auto; color: var(--muted); }
+.workspace { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 38%); }
+.graph-wrap { min-height: 640px; overflow: hidden; position: relative; }
+svg { width: 100%; height: 100%; min-height: 640px; display: block; }
+.edge { stroke: var(--line); stroke-width: 1.2; opacity: .8; }
+.node circle { fill: var(--panel); stroke: var(--accent); stroke-width: 2; cursor: pointer; }
+.node text { fill: var(--text); font-size: 11px; pointer-events: none; }
+.node.selected circle { fill: var(--accent-soft); stroke-width: 4; }
+.panel { overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 18px; }
+.panel h1 { margin: 0 0 6px; font-size: 22px; }
+.panel h2 { margin-top: 22px; font-size: 16px; }
+.meta { display: grid; grid-template-columns: max-content 1fr; gap: 5px 12px; margin: 14px 0; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; overflow-wrap: anywhere; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.badge { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+.badge.accent { border-color: var(--accent); background: var(--accent-soft); }
+.badge.stale { background: var(--danger-soft); }
+.body { overflow-wrap: anywhere; }
+.body pre { overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--bg); }
+.body code { background: var(--bg); border-radius: 4px; padding: 1px 4px; }
+.body table { border-collapse: collapse; max-width: 100%; }
+.body th, .body td { border: 1px solid var(--line); padding: 5px 8px; }
+.link-list { padding-left: 18px; }
+.empty { color: var(--muted); padding: 28px; }
+@media (max-width: 800px) {
+  .workspace { grid-template-columns: 1fr; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); }
+  .summary { width: 100%; margin-left: 0; }
+}
+</style>
+<div class="app">
+  <div class="toolbar">
+    <label>Search<input id="search" type="search" placeholder="Title, type, path"></label>
+    <label>Type<select id="type"><option value="">All types</option></select></label>
+    <label>Layout<select id="layout"><option value="cose">Radial</option><option value="concentric">Concentric</option><option value="grid">Grid</option></select></label>
+    <div class="summary" id="summary"></div>
+  </div>
+  <div class="workspace">
+    <div class="graph-wrap"><svg id="graph" viewBox="0 0 1000 700" role="img" aria-label="OKF concept graph"></svg></div>
+    <aside class="panel" id="panel"><div class="empty">Select a concept.</div></aside>
+  </div>
+</div>
+<script>
+const DATA = __DATA__;
+const state = { selected: null, query: "", type: "", layout: "__LAYOUT__" };
+const svg = document.getElementById("graph");
+const panel = document.getElementById("panel");
+const search = document.getElementById("search");
+const typeSelect = document.getElementById("type");
+const layoutSelect = document.getElementById("layout");
+const summary = document.getElementById("summary");
+layoutSelect.value = state.layout;
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function inlineMarkdown(text) {
+  let out = escapeHtml(text);
+  out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<span title="$2">$1</span>');
+  return out;
+}
+
+function renderMarkdown(markdown) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  const output = [];
+  let inCode = false;
+  let code = [];
+  let inList = false;
+  let inTable = false;
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    if (/^(```|~~~)/.test(line)) {
+      if (inCode) {
+        output.push("<pre><code>" + escapeHtml(code.join("\n")) + "</code></pre>");
+        code = [];
+      }
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) { code.push(raw); continue; }
+    if (/^\s*[-*]\s+/.test(line)) {
+      if (!inList) { output.push("<ul>"); inList = true; }
+      output.push("<li>" + inlineMarkdown(line.replace(/^\s*[-*]\s+/, "")) + "</li>");
+      continue;
+    }
+    if (inList) { output.push("</ul>"); inList = false; }
+    if (/^\|.*\|$/.test(line)) {
+      const cells = line.slice(1, -1).split("|").map(c => c.trim());
+      if (cells.every(c => /^:?-{3,}:?$/.test(c))) continue;
+      if (!inTable) { output.push("<table>"); inTable = true; }
+      output.push("<tr>" + cells.map(c => "<td>" + inlineMarkdown(c) + "</td>").join("") + "</tr>");
+      continue;
+    }
+    if (inTable) { output.push("</table>"); inTable = false; }
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      const level = heading[1].length;
+      output.push("<h" + level + ">" + inlineMarkdown(heading[2]) + "</h" + level + ">");
+    } else if (!line.trim()) {
+      output.push("");
+    } else {
+      output.push("<p>" + inlineMarkdown(line) + "</p>");
+    }
+  }
+  if (inList) output.push("</ul>");
+  if (inTable) output.push("</table>");
+  if (inCode) output.push("<pre><code>" + escapeHtml(code.join("\n")) + "</code></pre>");
+  return output.join("\n");
+}
+
+function positions(nodes, layout) {
+  const map = new Map();
+  const count = Math.max(nodes.length, 1);
+  if (layout === "grid") {
+    const columns = Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / columns);
+    nodes.forEach((node, index) => {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      map.set(node.id, { x: 100 + col * (800 / Math.max(columns - 1, 1)), y: 90 + row * (520 / Math.max(rows - 1, 1)) });
+    });
+    return map;
+  }
+  const byType = new Map();
+  for (const node of nodes) {
+    if (!byType.has(node.type)) byType.set(node.type, []);
+    byType.get(node.type).push(node);
+  }
+  if (layout === "concentric") {
+    const groups = [...byType.values()];
+    groups.forEach((group, ringIndex) => {
+      const radius = 100 + ringIndex * Math.min(95, 360 / Math.max(groups.length, 1));
+      group.forEach((node, index) => {
+        const angle = (Math.PI * 2 * index / Math.max(group.length, 1)) - Math.PI / 2;
+        map.set(node.id, { x: 500 + Math.cos(angle) * radius, y: 350 + Math.sin(angle) * radius });
+      });
+    });
+    return map;
+  }
+  nodes.forEach((node, index) => {
+    const angle = (Math.PI * 2 * index / count) - Math.PI / 2;
+    const radius = Math.min(285, 150 + count * 3);
+    map.set(node.id, { x: 500 + Math.cos(angle) * radius, y: 350 + Math.sin(angle) * radius });
+  });
+  return map;
+}
+
+function visibleNodes() {
+  const q = state.query.trim().toLowerCase();
+  return DATA.nodes.filter(node => {
+    const matchesType = !state.type || node.type === state.type;
+    const haystack = [node.id, node.title, node.type, node.description, ...(node.tags || [])].join(" ").toLowerCase();
+    return matchesType && (!q || haystack.includes(q));
+  });
+}
+
+function renderGraph() {
+  const nodes = visibleNodes();
+  const visible = new Set(nodes.map(n => n.id));
+  const pos = positions(nodes, state.layout);
+  svg.replaceChildren();
+  for (const edge of DATA.edges) {
+    if (!visible.has(edge.source) || !visible.has(edge.target)) continue;
+    const a = pos.get(edge.source);
+    const b = pos.get(edge.target);
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", a.x);
+    line.setAttribute("y1", a.y);
+    line.setAttribute("x2", b.x);
+    line.setAttribute("y2", b.y);
+    line.setAttribute("class", "edge");
+    svg.appendChild(line);
+  }
+  for (const node of nodes) {
+    const p = pos.get(node.id);
+    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.setAttribute("class", "node" + (state.selected === node.id ? " selected" : ""));
+    group.setAttribute("transform", `translate(${p.x} ${p.y})`);
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("r", Math.max(18, Math.min(32, 18 + (node.degree || 0) * 1.5)));
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("dy", "45");
+    label.textContent = node.title.length > 28 ? node.title.slice(0, 27) + "…" : node.title;
+    group.append(circle, label);
+    group.addEventListener("click", () => selectNode(node.id));
+    svg.appendChild(group);
+  }
+  summary.textContent = `${nodes.length} / ${DATA.nodes.length} concepts · ${DATA.edges.length} relationships`;
+}
+
+function trustTier(node) {
+  const entries = Array.isArray(node.verified) ? node.verified : (node.verified ? [node.verified] : []);
+  if (!entries.length) return "unverified";
+  return entries.some(item => String(item?.by || "").startsWith("human:")) ? "human-reviewed" : "machine-confirmed";
+}
+function stale(node) { return Boolean(node.stale_after && node.stale_after <= DATA.today); }
+function listLinks(ids) {
+  if (!ids.length) return '<span class="empty">None</span>';
+  return '<ul class="link-list">' + ids.map(id => {
+    const target = DATA.nodeById[id];
+    return `<li><button type="button" data-open="${escapeHtml(id)}">${escapeHtml(target?.title || id)}</button></li>`;
+  }).join("") + "</ul>";
+}
+function selectNode(id) {
+  state.selected = id;
+  const node = DATA.nodeById[id];
+  if (!node) return;
+  const tier = trustTier(node);
+  const isStale = stale(node);
+  panel.innerHTML = `
+    <h1>${escapeHtml(node.title)}</h1>
+    <div>${escapeHtml(node.id)}</div>
+    <div class="badges">
+      <span class="badge accent">${escapeHtml(node.type)}</span>
+      <span class="badge">${escapeHtml(node.status || "stable")}</span>
+      <span class="badge">${escapeHtml(tier)}</span>
+      ${isStale ? '<span class="badge stale">stale</span>' : ""}
+    </div>
+    <p>${escapeHtml(node.description || "")}</p>
+    <dl class="meta">
+      <dt>Generated</dt><dd>${escapeHtml(JSON.stringify(node.generated || node.timestamp || ""))}</dd>
+      <dt>Verified</dt><dd>${escapeHtml(JSON.stringify(node.verified || ""))}</dd>
+      <dt>Stale after</dt><dd>${escapeHtml(node.stale_after || "")}</dd>
+      <dt>Tags</dt><dd>${escapeHtml((node.tags || []).join(", "))}</dd>
+      <dt>Sources</dt><dd>${escapeHtml(JSON.stringify(node.sources || []))}</dd>
+    </dl>
+    <h2>Links to</h2>${listLinks(node.links_to || [])}
+    <h2>Cited by</h2>${listLinks(node.cited_by || [])}
+    <h2>Content</h2>
+    <div class="body">${renderMarkdown(node.body)}</div>`;
+  panel.querySelectorAll("[data-open]").forEach(button => button.addEventListener("click", () => selectNode(button.dataset.open)));
+  renderGraph();
+}
+for (const type of DATA.types) {
+  const option = document.createElement("option");
+  option.value = type;
+  option.textContent = type;
+  typeSelect.appendChild(option);
+}
+search.addEventListener("input", () => { state.query = search.value; renderGraph(); });
+typeSelect.addEventListener("change", () => { state.type = typeSelect.value; renderGraph(); });
+layoutSelect.addEventListener("change", () => { state.layout = layoutSelect.value; renderGraph(); });
+renderGraph();
+if (DATA.nodes.length) selectNode(DATA.nodes[0].id);
+</script>
+'''
 
 
-def json_for_script(obj) -> str:
-    """JSON-encode ``obj`` for safe embedding inside an inline ``<script>``.
-
-    The HTML tokenizer knows nothing about JS string context: a literal
-    ``</script>`` in a concept body ends the inline script early (truncating the
-    embedded ``NODES``/``EDGES`` and breaking the whole page), and ``<!--`` can
-    shift it into the escaped script-data states where even the template's real
-    closing tag stops working. Escaping every ``<`` as ``\\u003c`` neutralizes
-    ``</script>``, ``<!--`` and ``<script`` in one stroke, and the result stays
-    valid JSON *and* JavaScript (``json.dumps`` keeps everything else ASCII via
-    the default ``ensure_ascii=True``).
-    """
-    return json.dumps(obj, default=str).replace("<", "\\u003c")
-
-
-def split_frontmatter(text: str):
+def split_frontmatter(text: str) -> tuple[dict, str]:
     if not text.startswith("---"):
         return {}, text
     lines = text.splitlines(keepends=True)
-    if lines[0].strip() != "---":
+    if not lines or lines[0].strip() != "---":
         return {}, text
-    for i in range(1, len(lines)):
-        if lines[i].strip() == "---":
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            raw = "".join(lines[1:index])
+            body = "".join(lines[index + 1 :])
             try:
-                meta = yaml.safe_load("".join(lines[1:i])) or {}
+                meta = yaml.safe_load(raw) or {}
             except yaml.YAMLError:
-                meta = {}
-            return (meta if isinstance(meta, dict) else {}), "".join(lines[i + 1:])
+                return {}, body
+            return meta if isinstance(meta, dict) else {}, body
     return {}, text
 
 
-def link_targets(text: str):
-    out, in_fence = [], False
-    for line in text.splitlines():
-        if FENCE.match(line.strip()):
-            in_fence = not in_fence
-            continue
-        if not in_fence:
-            out.extend(LINK.findall(line))
-    return out
-
-
-def resolve(target: str, path: Path, bundle: Path):
-    """Resolve a link/`sources[].resource` to a concept id, or None if it is not
-    one (an external URL, an asset, a scope descriptor, an escape from the tree)."""
-    t = str(target).split("#", 1)[0]
-    if not t.endswith(".md"):
+def normalize_target(source_id: str, target: str, known: set[str]) -> str | None:
+    target = target.split("#", 1)[0].split("?", 1)[0].strip()
+    if not target or not target.endswith(".md"):
         return None
-    if t.startswith("/"):
-        return t.lstrip("/")[:-3]
-    cand = (path.parent / t).resolve()
-    return cand.relative_to(bundle.resolve()).as_posix()[:-3] \
-        if cand.is_relative_to(bundle.resolve()) else None
-
-
-def read_sources(meta: dict, path: Path, bundle: Path):
-    """§5.1 `sources`, flattened for display. `cid` is set when the source is
-    itself a concept in this bundle — that derivation is a real graph edge."""
-    raw = meta.get("sources")
-    out = []
-    if not isinstance(raw, list):
-        return out
-    for src in raw:
-        if not isinstance(src, dict):
+    source_parent = PurePosixPath(source_id).parent
+    candidate = PurePosixPath(target.lstrip("/")) if target.startswith("/") else source_parent / target
+    parts: list[str] = []
+    for part in candidate.parts:
+        if part in ("", "."):
             continue
-        resource = str(src.get("resource", "")).strip()
-        # §5.1 — an entry's own `usage_window` overrides the one written once as a
-        # sibling of `sources`. A count without its window has no units.
-        window = src.get("usage_window", meta.get("usage_window"))
-        out.append({
-            "title": str(src.get("title") or src.get("id") or resource),
-            "resource": resource,
-            "cid": resolve(resource, path, bundle) if resource else None,
-            "author": str(src.get("author", "")),
-            "usage_count": src.get("usage_count"),
-            "usage_window": (f"{window.get('from', '?')}→{window.get('to', '?')}"
-                             if isinstance(window, dict) else ""),
-            "last_modified": str(src.get("last_modified") or ""),
-        })
-    return out
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    normalized = PurePosixPath(*parts).as_posix()
+    return normalized if normalized in known else None
 
 
-def read_trust(meta: dict):
-    """§5.2 `generated` / `verified`, falling back to a v0.1 `timestamp` (§13.1)."""
-    gen = meta.get("generated")
-    if isinstance(gen, dict):
-        generated = {"by": str(gen.get("by", "")), "at": str(gen.get("at", ""))}
-    elif meta.get("timestamp"):
-        generated = {"by": "", "at": str(meta["timestamp"])}
-    else:
-        generated = None
-    ver = meta.get("verified")
-    # a bare mapping is one verification event (§5.2)
-    entries = [ver] if isinstance(ver, dict) else (ver if isinstance(ver, list) else [])
-    verified = [{"by": str(e.get("by", "")), "at": str(e.get("at", ""))}
-                for e in entries if isinstance(e, dict)]
-    return generated, verified
+def trust_tier(verified) -> str:
+    entries = verified if isinstance(verified, list) else ([verified] if isinstance(verified, dict) else [])
+    if not entries:
+        return "unverified"
+    return "human-reviewed" if any(str(item.get("by", "")).startswith("human:") for item in entries if isinstance(item, dict)) else "machine-confirmed"
 
 
-def build(bundle: Path):
-    nodes, edges, seen = [], [], set()
-    files = sorted(p for p in bundle.rglob("*.md") if p.is_file() and p.name not in RESERVED)
-    ids = {p.relative_to(bundle).with_suffix("").as_posix() for p in files}
-    for p in files:
-        cid = p.relative_to(bundle).with_suffix("").as_posix()
+def load_bundle(bundle: Path, max_nodes: int | None) -> dict:
+    records: list[dict] = []
+    for path in sorted(bundle.rglob("*.md")):
+        if path.name in RESERVED:
+            continue
+        rel = path.relative_to(bundle).as_posix()
         try:
-            raw = p.read_text(encoding="utf-8").lstrip("﻿")
-        except (UnicodeDecodeError, OSError) as exc:
-            print(f"warning: skipping {p.relative_to(bundle)}: cannot read file: {exc}", file=sys.stderr)
-            ids.discard(cid)
+            text = path.read_text(encoding="utf-8").lstrip("\ufeff")
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"warning: skipping {rel}: {exc}", file=sys.stderr)
             continue
-        meta, body = split_frontmatter(raw)
-        body = body.strip()
-        generated, verified = read_trust(meta)
-        sources = read_sources(meta, p, bundle)
-        nodes.append({
-            "id": cid,
-            "type": str(meta.get("type", "Untyped")),
-            "title": str(meta.get("title", p.stem)),
-            "description": str(meta.get("description", "")),
-            "tags": meta.get("tags", []) if isinstance(meta.get("tags"), list) else [],
-            "group": cid.split("/")[0] if "/" in cid else "(root)",
-            "sz": max(24, min(70, 24 + len(body) // 200)),
-            "status": str(meta.get("status", "")),
+        meta, body = split_frontmatter(text)
+        records.append({
+            "id": rel,
+            "title": str(meta.get("title") or path.stem.replace("-", " ").replace("_", " ").title()),
+            "type": str(meta.get("type") or "Unknown"),
+            "description": str(meta.get("description") or ""),
+            "tags": meta.get("tags") if isinstance(meta.get("tags"), list) else [],
+            "status": str(meta.get("status") or "stable"),
             "stale_after": str(meta.get("stale_after") or ""),
-            "generated": generated,
-            "verified": verified,
-            "sources": sources,
-            "body": body[:8000],
+            "generated": meta.get("generated"),
+            "timestamp": meta.get("timestamp"),
+            "verified": meta.get("verified"),
+            "sources": meta.get("sources") if isinstance(meta.get("sources"), list) else [],
+            "body": body,
+            "_raw_links": LINK_RE.findall(body),
         })
-        targets = link_targets(body) + [s["resource"] for s in sources if s["cid"]]
-        for t in targets:
-            tgt = resolve(t, p, bundle)
-            if tgt and tgt in ids and tgt != cid and (cid, tgt) not in seen:
-                seen.add((cid, tgt))
-                edges.append({"source": cid, "target": tgt})
-    return nodes, edges
-
-
-HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OKF — __NAME__</title>
-<meta property="og:title" content="__OGTITLE__">
-<meta property="og:description" content="__OGDESC__">
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image">
-__OGIMAGE__
-<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@14/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.12/dist/purify.min.js" integrity="sha384-piCcpDdJ7qVeK4Tv8Z6Hpcr3ZBIgP16TxQTPVfsLFdZ5uDgwc3Y8Ho7oUnqf12qu" crossorigin="anonymous"></script>
-<style>
- :root{--bg:#0e0f13;--panel:#16181f;--line:#262a35;--fg:#e6e8ee;--mut:#9aa3b2;--accent:#8ab4ff}
- *{box-sizing:border-box} html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
-   font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
- /* The row must be stated. Left implicit it sizes to `auto`, i.e. to the tallest
-    item — a long concept body then stretched #side past the viewport and the page
-    grew its own scrollbar on top of the panel's, which in turn forced a spurious
-    horizontal one. Pinning the row to 100% keeps the panel scrolling inside. */
- #app{display:grid;grid-template-columns:1fr 400px;grid-template-rows:100%;height:100vh}
- #cy{width:100%;height:100%}
- #side{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:18px}
- header{position:absolute;top:0;left:0;padding:14px 18px;z-index:5;pointer-events:none}
- h1{font-size:15px;margin:0;font-weight:650} .sub{color:var(--mut);font-size:12px;margin-top:2px}
- #bar{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:5;display:flex;gap:8px}
- #bar input,#bar select{background:var(--panel);border:1px solid var(--line);color:var(--fg);
-   border-radius:8px;padding:8px 10px;outline:none;font-size:13px}
- #search{width:min(300px,32vw)}
- #legend{position:absolute;bottom:14px;left:18px;z-index:5;display:flex;flex-wrap:wrap;gap:6px;max-width:60vw}
- .chip{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);
-   border-radius:20px;padding:3px 10px;font-size:12px;color:var(--mut);cursor:pointer;user-select:none}
- .chip.off{opacity:.4} .dot{width:10px;height:10px;border-radius:50%}
- #side h2{font-size:17px;margin:.2em 0} .type{display:inline-block;border-radius:6px;padding:2px 8px;
-   font-size:11px;font-weight:600;color:#0e0f13} .desc{color:var(--mut);margin:8px 0 12px}
- .tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
- .tag{background:#1d2230;border:1px solid var(--line);border-radius:6px;padding:1px 8px;font-size:11px;color:var(--mut)}
- .meta{margin:10px 0;font-size:12px;color:var(--mut)} .meta div{padding:1px 0} .meta b{color:var(--fg);font-weight:600}
- .sig{color:var(--mut)}
- .badges{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
- .badge{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;border:1px solid}
- .t-unverified{color:#9aa3b2;border-color:#3a4150;background:#1d2230}
- .t-machine{color:#8ab4ff;border-color:#2b4570;background:#141c2b}
- .t-human{color:#4ade80;border-color:#276b45;background:#12211a}
- .b-stale{color:#fca5a5;border-color:#7f2b2b;background:#241416}
- .b-deprecated{color:#fbbf24;border-color:#7a5312;background:#241d10}
- .rel{margin:10px 0} .rel h4{margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
- .rel a{display:block;color:var(--accent);cursor:pointer;font-size:13px;padding:1px 0;text-decoration:none}
- .rel a:hover{text-decoration:underline}
- .body{border-top:1px solid var(--line);padding-top:12px;margin-top:12px} .body table{border-collapse:collapse;display:block;overflow:auto}
- .body td,.body th{border:1px solid var(--line);padding:4px 8px} .body code{background:#1d2230;padding:1px 5px;border-radius:4px}
- .body pre{background:#1d2230;padding:10px;border-radius:8px;overflow:auto} .body img{max-width:100%}
- .empty{color:var(--mut)} a{color:var(--accent)}
- .src{pointer-events:auto;color:var(--accent);margin-left:10px;text-decoration:none} .src:hover{text-decoration:underline}
-</style></head><body>
-<div id="app"><div id="cy"></div><div id="side"><p class="empty">Click a concept to inspect it.</p></div></div>
-<header><h1>__NAME__</h1><div class="sub">__N__ concepts · __E__ links · OKF v0.2__LINK__</div></header>
-<div id="bar">
- <input id="search" placeholder="search concepts…">
- <select id="type"><option value="">all types</option></select>
- <select id="layout">
-  <option value="cose">force</option><option value="concentric">concentric</option>
-  <option value="breadthfirst">breadth-first</option><option value="circle">circle</option><option value="grid">grid</option>
- </select>
-</div>
-<div id="legend"></div>
-<script>
-const NODES=__NODES__, EDGES=__EDGES__;
-const PALETTE=["#6E56CF","#D97757","#22C55E","#3B82F6","#EAB308","#EC4899","#14B8A6","#F97316","#A855F7","#0EA5E9","#84CC16","#EF4444","#64748B"];
-const byId=Object.fromEntries(NODES.map(n=>[n.id,n]));
-const outL={}, inL={};
-NODES.forEach(n=>{outL[n.id]=[];inL[n.id]=[];});
-EDGES.forEach(e=>{outL[e.source].push(e.target);inL[e.target].push(e.source);});
-const types=[...new Set(NODES.map(n=>n.type))].sort();
-const color=Object.fromEntries(types.map((t,i)=>[t,PALETTE[i%PALETTE.length]]));
-const off=new Set();
-const cy=cytoscape({container:document.getElementById('cy'),minZoom:.2,maxZoom:1.6,wheelSensitivity:.2,
- elements:[...NODES.map(n=>({data:{...n,c:color[n.type]}})),...EDGES.map(e=>({data:e}))],
- style:[
-  {selector:'node',style:{'background-color':'data(c)','label':'data(title)','color':'#e6e8ee',
-   'font-size':10,'text-wrap':'wrap','text-max-width':120,'text-valign':'bottom','text-margin-y':4,
-   'text-outline-width':2,'text-outline-color':'#0e0f13','min-zoomed-font-size':6,
-   'width':'data(sz)','height':'data(sz)'}},
-  {selector:'edge',style:{'width':1.2,'line-color':'#3a4150','target-arrow-color':'#3a4150',
-   'target-arrow-shape':'triangle','arrow-scale':.8,'curve-style':'bezier','opacity':.7}},
-  {selector:'.dim',style:{'opacity':.10}},{selector:'.hl',style:{'border-width':3,'border-color':'#fff'}}
- ],
- layout:{name:'__LAYOUT__',animate:false,nodeRepulsion:9000,idealEdgeLength:90,padding:40}});
-const side=document.getElementById('side');
-const esc=s=>(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function relList(title,arr){if(!arr.length)return'';
- return `<div class="rel"><h4>${title}</h4>${arr.map(id=>`<a data-go="${esc(id)}">${esc((byId[id]||{}).title||id)}</a>`).join('')}</div>`;}
-// §5.3 — the trust tier is derived, never stored: no `verified` is unverified,
-// `verified` by non-`human:` actors only is machine-confirmed, and any `human:`
-// actor makes it human-reviewed. The exact lowercase prefix is the whole key.
-// §5.5 — a concept is stale when today >= stale_after; both are YYYY-MM-DD, so
-// a string compare is the whole comparison. Advisory signals, not access control.
-const TODAY=new Date().toISOString().slice(0,10);
-function trustTier(n){const v=n.verified||[];
- if(!v.length)return['t-unverified','unverified'];
- return v.some(e=>(e.by||'').startsWith('human:'))?['t-human','human-reviewed']
-                                                  :['t-machine','machine-confirmed'];}
-function badges(n){const [cls,label]=trustTier(n),out=[`<span class="badge ${cls}">${label}</span>`];
- if(n.stale_after&&TODAY>=n.stale_after)out.push(`<span class="badge b-stale">stale since ${esc(n.stale_after)}</span>`);
- if(n.status==='deprecated')out.push('<span class="badge b-deprecated">deprecated</span>');
- return `<div class="badges">${out.join('')}</div>`;}
-// OKF v0.2 trust (§5.2) + lifecycle (§5.4/§5.5). A v0.1 `timestamp` arrives here
-// as generated.at with an empty `by`, so legacy bundles still show a date.
-function metaBlock(n){const g=n.generated||{},rows=[];
- if(n.status)rows.push(`<div>status <b>${esc(n.status)}</b></div>`);
- if(g.at||g.by)rows.push(`<div>generated${g.at?` <b>${esc(g.at)}</b>`:''}${g.by?` by ${esc(g.by)}`:''}</div>`);
- (n.verified||[]).forEach(v=>rows.push(`<div>verified${v.at?` <b>${esc(v.at)}</b>`:''}${v.by?` by ${esc(v.by)}`:''}</div>`));
- if(n.stale_after)rows.push(`<div>stale after <b>${esc(n.stale_after)}</b></div>`);
- return rows.length?`<div class="meta">${rows.join('')}</div>`:'';}
-// Provenance (§5.1). A source may be another concept (graph link), an external
-// URL, or a scope descriptor that is not followable at all.
-function srcList(n){const s=n.sources||[];if(!s.length)return'';
- return `<div class="rel"><h4>Sources</h4>${s.map(x=>{
-  const used=x.usage_count!=null?`used ${x.usage_count}×${x.usage_window?` (${x.usage_window})`:''}`:'';
-  const sig=[x.author,used,x.last_modified].filter(Boolean).join(' · ');
-  const label=esc(x.title||x.resource)+(sig?` <span class="sig">(${esc(sig)})</span>`:'');
-  if(x.cid&&byId[x.cid])return `<a data-go="${esc(x.cid)}">${label}</a>`;
-  if(/^https?:\/\//i.test(x.resource))return `<a href="${esc(x.resource)}" target="_blank" rel="noopener">${label}</a>`;
-  return `<span class="empty">${label}</span>`;}).join('')}</div>`;}
-// Resolve an in-body markdown link href to a concept id, mirroring build()'s
-// resolution: strip #anchor, require .md, absolute strips leading /, relative
-// resolves against the current concept's dir. Returns null if it's not a concept.
-function resolveHref(cid,href){let t=(href||'').split('#')[0];if(!t.endsWith('.md'))return null;
- let tgt;if(t[0]==='/'){tgt=t.replace(/^\/+/,'').slice(0,-3);}
- else{const base=cid.split('/').slice(0,-1);
-  for(const seg of t.slice(0,-3).split('/')){if(seg===''||seg==='.')continue;
-   if(seg==='..'){if(!base.length)return null;base.pop();}else base.push(seg);}
-  tgt=base.join('/');}
- return byId[tgt]?tgt:null;}
-function show(id){const n=byId[id];if(!n)return;const c=color[n.type];
- side.innerHTML=`<span class="type" style="background:${c}">${esc(n.type)}</span>
- <h2>${esc(n.title)}</h2><div class="desc">${esc(n.description)||'<span class=empty>no description</span>'}</div>
- <div class="tags">${(n.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>
- ${badges(n)}${metaBlock(n)}${srcList(n)}${relList('Links to',outL[id])}${relList('Cited by',inL[id])}
- <div class="body">${n.body?DOMPurify.sanitize(marked.parse(n.body)):'<span class=empty>empty body</span>'}</div>`;
- side.querySelectorAll('[data-go]').forEach(a=>a.onclick=()=>select(a.getAttribute('data-go')));
- side.querySelectorAll('.body a[href]').forEach(a=>{const tgt=resolveHref(id,a.getAttribute('href'));
-  if(tgt)a.onclick=e=>{e.preventDefault();select(tgt);};});}
-function select(id){const ele=cy.getElementById(id);if(!ele.length)return;show(id);
- cy.elements().removeClass('hl').addClass('dim');const nb=ele.closedNeighborhood();nb.removeClass('dim');ele.addClass('hl');
- cy.animate({center:{eles:ele},duration:250});
- try{if(decodeURIComponent((location.hash||'').slice(1))!==id)location.hash=encodeURIComponent(id);}catch(e){}}
-cy.on('tap','node',e=>select(e.target.id()));
-cy.on('tap',e=>{if(e.target===cy)cy.elements().removeClass('dim hl');});
-function applyFilter(){const q=document.getElementById('search').value.toLowerCase();const ty=document.getElementById('type').value;
- cy.batch(()=>cy.nodes().forEach(n=>{const d=n.data();
-  const m=(!q||(d.title+' '+d.type+' '+d.description+' '+(d.tags||[]).join(' ')).toLowerCase().includes(q))
-        &&(!ty||d.type===ty)&&!off.has(d.type);
-  n.style('display',m?'element':'none');}));}
-let debounce;
-document.getElementById('search').oninput=()=>{clearTimeout(debounce);debounce=setTimeout(applyFilter,150);};
-document.getElementById('type').oninput=applyFilter;
-const tysel=document.getElementById('type');types.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;tysel.appendChild(o);});
-let curLayout='__LAYOUT__';
-document.getElementById('layout').onchange=e=>{const v=e.target.value;
- if(v==='cose'&&NODES.length>__COSEMAX__&&!confirm(`force layout on ${NODES.length} concepts can freeze this tab — run anyway?`)){e.target.value=curLayout;return;}
- curLayout=v;cy.layout({name:v,animate:true,padding:40,nodeRepulsion:9000,idealEdgeLength:90}).run();};
-document.getElementById('legend').innerHTML=types.map(t=>`<span class="chip" data-t="${esc(t)}"><span class="dot" style="background:${color[t]}"></span>${esc(t)} (${NODES.filter(n=>n.type===t).length})</span>`).join('');
-document.querySelectorAll('#legend .chip').forEach(ch=>ch.onclick=()=>{const t=ch.getAttribute('data-t');
- if(off.has(t)){off.delete(t);ch.classList.remove('off');}else{off.add(t);ch.classList.add('off');}applyFilter();});
-document.getElementById('layout').value='__LAYOUT__';
-const Q=new URLSearchParams(location.search),QL=Q.get('layout'),QS=Q.get('select');
-if(QL&&[...document.querySelectorAll('#layout option')].some(o=>o.value===QL)){document.getElementById('layout').value=QL;curLayout=QL;cy.layout({name:QL,animate:false,padding:40,nodeRepulsion:9000,idealEdgeLength:90}).run();}
-function fromHash(){try{const h=decodeURIComponent((location.hash||'').slice(1));if(h&&byId[h])select(h);}catch(e){}}
-addEventListener('hashchange',fromHash);
-if(QS&&byId[QS])select(QS);else fromHash();
-</script></body></html>"""
-
-
-def render(bundle: Path, out: Path, title: str | None = None, link: str | None = None,
-           layout: str | None = None, og_image: str | None = None,
-           max_nodes: int | None = None):
-    nodes, edges = build(bundle)
-    if max_nodes is not None and len(nodes) > max_nodes:
-        sys.exit(f"error: {len(nodes)} concepts exceeds --max-nodes {max_nodes}")
-    if layout is None:
-        layout = "cose" if len(nodes) <= AUTO_COSE_MAX else "concentric"
-        if layout != "cose":
-            print(f"note: {len(nodes)} concepts > {AUTO_COSE_MAX} — using the linear 'concentric' "
-                  "layout (force freezes the page at this size; pass --layout cose to override)",
-                  file=sys.stderr)
-    if len(nodes) > SCALE_WARN:
-        print(f"warning: {len(nodes)} concepts — the page will load slowly and read as a hairball; "
-              f"consider rendering a subtree, e.g. okf_visualize.py {bundle}/<subdir>",
-              file=sys.stderr)
-    name = title or f"{bundle.resolve().parent.name}/{bundle.name}"
-    src = f' <a class="src" href="{link}" target="_blank" rel="noopener">source ↗</a>' if link else ""
-    aesc = lambda s: (s or "").replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
-    og_title = aesc(f"OKF — {name}")
-    og_desc = aesc(f"{len(nodes)} concepts · interactive Open Knowledge Format knowledge graph")
-    og_img = (f'<meta property="og:image" content="{aesc(og_image)}">\n'
-              f'<meta name="twitter:image" content="{aesc(og_image)}">') if og_image else ""
-    subs = {"__NAME__": name, "__LINK__": src, "__LAYOUT__": layout,
-            "__COSEMAX__": str(AUTO_COSE_MAX),
-            "__OGTITLE__": og_title, "__OGDESC__": og_desc, "__OGIMAGE__": og_img,
-            "__N__": str(len(nodes)), "__E__": str(len(edges)),
-            "__NODES__": json_for_script(nodes), "__EDGES__": json_for_script(edges)}
-    # One pass, longest marker first: substituted content (e.g. a concept body that
-    # mentions "__EDGES__") must never itself be rescanned for other markers.
-    marker = re.compile("|".join(sorted(map(re.escape, subs), key=len, reverse=True)))
-    html = marker.sub(lambda m: subs[m.group(0)], HTML)
-    out.write_text(html, encoding="utf-8")
-    return len(nodes), len(edges)
-
-
-def _force_utf8_stdio() -> None:
-    """Reconfigure stdout/stderr to UTF-8 so status lines never crash on a
-    cp1252 (default Windows) console. `errors="replace"` is a fallback."""
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is not None:
-            try:
-                reconfigure(encoding="utf-8", errors="replace")
-            except (ValueError, OSError):
-                pass
+    if max_nodes is not None and len(records) > max_nodes:
+        raise ValueError(f"bundle contains {len(records)} concepts, above --max-nodes {max_nodes}")
+    known = {record["id"] for record in records}
+    edges: set[tuple[str, str, str]] = set()
+    for record in records:
+        for target in record.pop("_raw_links"):
+            normalized = normalize_target(record["id"], target, known)
+            if normalized:
+                edges.add((record["id"], normalized, "link"))
+        for source in record["sources"]:
+            if isinstance(source, dict):
+                normalized = normalize_target(record["id"], str(source.get("resource") or ""), known)
+                if normalized:
+                    edges.add((record["id"], normalized, "source"))
+    outgoing: dict[str, set[str]] = {node_id: set() for node_id in known}
+    incoming: dict[str, set[str]] = {node_id: set() for node_id in known}
+    for source, target, _kind in edges:
+        outgoing[source].add(target)
+        incoming[target].add(source)
+    for record in records:
+        record["links_to"] = sorted(outgoing[record["id"]])
+        record["cited_by"] = sorted(incoming[record["id"]])
+        record["degree"] = len(outgoing[record["id"]]) + len(incoming[record["id"]])
+        record["trust_tier"] = trust_tier(record["verified"])
+    return {
+        "nodes": records,
+        "edges": [{"source": s, "target": t, "kind": k} for s, t, k in sorted(edges)],
+        "nodeById": {record["id"]: record for record in records},
+        "types": sorted({record["type"] for record in records}),
+        "today": date.today().isoformat(),
+    }
 
 
 def main() -> int:
-    _force_utf8_stdio()
-    ap = argparse.ArgumentParser(description="Render an OKF bundle as a self-contained HTML graph.")
-    ap.add_argument("bundle", type=Path)
-    ap.add_argument("-o", "--out", type=Path, default=None)
-    ap.add_argument("-t", "--title", default=None, help="graph title (default: parent/bundle dir name)")
-    ap.add_argument("-l", "--link", default=None, help="optional source URL shown in the header")
-    ap.add_argument("--layout", default=None,
-                    choices=["cose", "concentric", "breadthfirst", "circle", "grid"],
-                    help=f"initial graph layout (default: cose, or concentric above {AUTO_COSE_MAX} "
-                         "concepts — force layout freezes the page on large bundles)")
-    ap.add_argument("--max-nodes", type=int, default=None,
-                    help="refuse to render bundles with more concepts than this (useful in CI)")
-    ap.add_argument("--og-image", default=None,
-                    help="absolute URL for the social-preview image (og:image / twitter:image)")
-    args = ap.parse_args()
-    if not args.bundle.is_dir():
-        print(f"error: {args.bundle} is not a directory", file=sys.stderr)
+    parser = argparse.ArgumentParser(description="Render an OKF bundle as an offline HTML graph.")
+    parser.add_argument("bundle", nargs="?", type=Path, default=Path(".okf"))
+    parser.add_argument("-o", "--output", type=Path, default=None)
+    parser.add_argument("--layout", choices=("cose", "concentric", "grid"), default=None)
+    parser.add_argument("--max-nodes", type=int, default=None)
+    args = parser.parse_args()
+    bundle = args.bundle.resolve()
+    if not bundle.is_dir():
+        print(f"error: bundle directory does not exist: {bundle}", file=sys.stderr)
         return 2
-    out = args.out or (args.bundle / "viz.html")
-    n, e = render(args.bundle, out, title=args.title, link=args.link, layout=args.layout,
-                  og_image=args.og_image, max_nodes=args.max_nodes)
-    print(f"rendered {n} concepts, {e} links -> {out}")
+    try:
+        data = load_bundle(bundle, args.max_nodes)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    layout = args.layout or ("concentric" if len(data["nodes"]) > 1000 else "cose")
+    output = args.output or (bundle / "viz.html")
+    payload = json.dumps(data, ensure_ascii=False, default=str).replace("</", "<\\/")
+    document = HTML_TEMPLATE.replace("__DATA__", payload).replace("__LAYOUT__", html.escape(layout))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(document, encoding="utf-8")
+    print(f"wrote offline OKF visualization to {output}")
     return 0
 
 
