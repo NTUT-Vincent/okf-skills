@@ -18,7 +18,7 @@
 - 不把 OKF metadata 中的 URL 視為自動連線許可
 - Attested Computation 必須由使用者或公司核准的 host policy 明確授權後才能執行
 
-新的 `viz.html` 只包含內嵌 CSS 與 vanilla JavaScript。產生與開啟視覺化檔案時，不需要下載 Cytoscape、Marked、DOMPurify 或其他瀏覽器套件。
+新的 `viz.html` 只包含內嵌 CSS 與 vanilla JavaScript。產生與開啟視覺化檔案時，不需要下載任何瀏覽器套件。
 
 ## 保留的檔案
 
