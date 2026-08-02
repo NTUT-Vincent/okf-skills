@@ -47,23 +47,34 @@ The included scripts treat these values as text, paths, metadata, or graph label
 
 The original visualizer depended on remote browser libraries. The company-safe variant replaces that browser layer with embedded native functionality:
 
-- SVG graph rendering
-- radial, concentric, and grid layouts
-- search and type filters
+- SVG graph rendering in a virtual coordinate space
+- directory-cluster layout for large bundles
+- grid, concentric, and radial compatibility layouts
+- wheel and pinch zoom
+- pointer-drag panning
+- zoom in/out, Fit, and Reset controls
+- adaptive labels based on zoom level
+- search, type filters, and directory-group filters
+- click-to-inspect and double-click-to-focus behavior
 - concept detail panel
 - trust and staleness badges
 - Markdown headings, lists, tables, code blocks, and inline formatting
 - bundle links and backlinks
 
+Each visible concept receives its own layout coordinate. Large bundles are grouped by parent directory instead of being compressed into one fixed-radius circle.
+
 No third-party JavaScript files are vendored into the repository, which avoids both CDN access and large minified dependency blobs that can also trigger source scanning.
 
-## Local verification performed
+## Verification performed
 
 - Python syntax compilation completed for the rewritten validator and visualizer.
 - A sample OKF v0.1 bundle was migrated to v0.2.
 - The migrated bundle was validated successfully without hard errors.
 - An interactive HTML file was generated from the sample bundle.
-- The generated HTML contained no CDN reference, external script source, or browser fetch call.
+- A synthetic 4,601-concept bundle was rendered with distinct clustered coordinates.
+- The complete `NTUT-Vincent/TWFoodMCP` `main/knowledge` bundle was rendered successfully: 4,601 concepts, 58 directory groups, and 0 source-defined graph relationships.
+- The generated TWFoodMCP HTML contained no external script source, external stylesheet, browser `fetch`, CDN, jsDelivr, or unpkg reference.
+- The generated HTML's embedded JavaScript passed Node.js syntax validation.
 
 ## Scanner limitation
 
