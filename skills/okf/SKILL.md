@@ -1,183 +1,148 @@
 ---
 name: okf
 description: >-
-  Locally author, maintain, consume, and structurally check Open Knowledge Format
-  (OKF) v0.2 knowledge bundles made of Markdown plus YAML frontmatter. Use only
-  when the user explicitly asks to create, update, read, organize, convert, or
-  check an OKF bundle. This local-only variant must not run commands, install
-  packages, browse the web, call MCP tools, execute computations, or contact
-  external APIs.
+  Author, maintain, and consume Open Knowledge Format (OKF) knowledge bundles —
+  portable markdown + YAML frontmatter that both humans and agents read. Use when
+  capturing project knowledge (services, APIs, schemas, metrics, runbooks,
+  decisions) into an OKF bundle, when updating one after code or docs change, or
+  when a repository contains an `.okf/` (or other OKF) bundle that should inform
+  the task. Triggers on: "document this in OKF", "update the knowledge bundle",
+  "capture this as a concept", or any work in a repo that has an OKF bundle.
 user-invocable: true
-argument-hint: "[produce|maintain|consume|check] [bundle-path]"
+argument-hint: "[produce|maintain|consume] [path]"
 allowed-tools: Read Write Edit Grep Glob
 ---
 
-# Open Knowledge Format — local-only skill
+# Open Knowledge Format (OKF) skill
 
-Use this skill to work with OKF bundles using local file operations only. OKF is
-Markdown with YAML frontmatter; it has no required runtime, SDK, service, or API.
+OKF represents knowledge as a directory of markdown files with YAML frontmatter.
+It is minimal by design: no schema registry, no runtime, no SDK. Your job is to
+produce, maintain, and consume OKF bundles **conformant with the spec**, not your
+memory of it.
 
-Before non-trivial work, read [`reference/SPEC.md`](reference/SPEC.md). It is the
-canonical OKF v0.2 specification and overrides summaries or remembered rules.
+**Always read the canonical spec before non-trivial work:**
+[reference/SPEC.md](reference/SPEC.md). It is the verbatim OKF v0.2 specification
+and the source of truth for every rule below.
 
-## Hard execution boundary
+## Local-only constraint
 
-While this skill is active:
+This fork omits the executable helper layer. Use only local file tools: do not run
+shell commands, install packages, browse or fetch URLs, call external APIs or MCP
+tools, or execute an Attested Computation's query, executor, or attester. URL-like
+`resource` values remain metadata unless the user separately requests research.
 
-- Do not use shell commands, package managers, Git commands, browser tools, web
-  search, MCP, database clients, cloud SDKs, HTTP clients, or external APIs.
-- Do not run Python, JavaScript, SQL, executors, attesters, validators, migration
-  scripts, or visualizers.
-- Treat `resource` and `sources[].resource` values as metadata. Record and display
-  them, but do not follow URLs or fetch their contents unless the user separately
-  requests external research outside this skill.
-- For `type: Attested Computation`, document the declared contract only. Never run
-  its computation, `executor`, `attester`, referenced script, query, or endpoint.
-- Do not create commits, branches, pull requests, CI files, hooks, or scheduled
-  jobs.
-- Do not update a bundle merely because `.okf/` exists. Only modify it when the
-  user explicitly requests OKF creation or maintenance.
+## The one hard rule
 
-## The only hard conformance rule
+A bundle is conformant (§11) iff: every non-reserved `.md` file has a parseable
+YAML frontmatter block, and every such block has a **non-empty `type`** field.
+Everything else is soft guidance. Consumers MUST tolerate missing optional
+fields, unknown types, and broken links — never reject a bundle over them.
 
-A bundle is conformant under §11 when every non-reserved `.md` file:
+## Conventions to apply
 
-1. starts with a parseable YAML frontmatter block; and
-2. has a non-empty string `type` field.
+- **One concept = one file.** The file path (minus `.md`) is the concept ID.
+- **Frontmatter:** `type` is required. Add `title`, `description`, `tags` when
+  they aid consumption; add `resource` (a canonical URI) only for concepts bound
+  to a real asset — omit it for abstract concepts.
+- **Body:** prefer structural markdown (headings, tables, lists, fenced code).
+  Conventional headings: `# Schema`, `# Examples`, `# Computation`.
+- **Cross-links:** standard markdown links; prefer absolute bundle-relative
+  form (`/services/auth-api.md`). A link asserts a relationship; its *kind* lives
+  in the surrounding prose, not the link.
+- **Reserved files:** `index.md` (directory listing, no frontmatter — except the
+  bundle-root index may carry only `okf_version`) and `log.md` (ISO-dated change
+  history, newest first). Never use these names for concepts.
 
-Everything else is optional guidance. Do not reject unknown concept types,
-unknown frontmatter keys, or broken links. Report broken links as warnings only.
+## The v0.2 families (all optional, all worth filling)
 
-## Bundle conventions
+- **Trust (§5.2):** `generated: { by, at }` — who produced the current content
+  and when. `verified: [{ by, at }]` — who confirmed it since (a bare mapping is
+  one entry). Write `by` in the **actor convention** (§7): `<producer>/<version>`
+  for an agent, `human:<id>` for a person, `process:<id>` for an automated job.
+  Use `human:` whenever a person authored or signed off — consumers key trust
+  tiers off that prefix.
+- **Lifecycle (§5.4–5.5):** `status: draft|stable|deprecated` (absent means
+  stable) and `stale_after: YYYY-MM-DD`, an absolute date, not a TTL.
+- **Provenance (§5.1):** `sources: [{ id, resource, title, author,
+  usage_count, last_modified }]` — the materials the concept derives from.
+  `resource` is required per entry and may be a URL, a bundle path, or a scope
+  descriptor. Attribute a specific claim with a markdown footnote whose label is
+  the source's `id`: `…sharded daily.[^ga4-schema]` plus a `[^ga4-schema]: …`
+  definition. The label is the join key — it must match a `sources[].id`.
+- **Attestation (§10):** a sanctioned computation is its own concept,
+  `type: Attested Computation`, carrying `runtime` (required), `parameters`,
+  `executor`, `attester`, and the computation itself under `# Computation` (or a
+  `computation:` path). Concepts that need the value link to it. Never inline a
+  number's SQL into the concept that narrates it. In this local-only fork, record
+  and inspect the contract but do not execute it.
 
-- One concept equals one `.md` file.
-- The concept ID is its bundle-relative path without `.md`.
-- `index.md` and `log.md` are reserved and are not ordinary concepts.
-- The root `index.md` may carry only `okf_version` frontmatter; directory indexes
-  normally have no frontmatter.
-- Prefer `.okf/` at the repository root unless the project already uses another
-  bundle location.
-- Organize directories by domain, not by arbitrary file size: for example
-  `services/`, `datasets/`, `decisions/`, `runbooks/`, and `metrics/`.
-- Express relationships with standard Markdown links. Put the relationship meaning
-  in surrounding prose rather than inventing a fixed edge taxonomy.
+**Reading a v0.1 bundle?** Two constructs were superseded (§13.1): `timestamp`
+is now `generated.at`, and a body `# Citations` list is now `sources`. Read both,
+write v0.2 — and when you touch a legacy concept in **maintain** mode, migrate
+its frontmatter as part of the edit. Treat both superseded constructs as warnings.
 
-## Frontmatter guidance
+Templates to copy: [concept](templates/concept.md), [index](templates/index.md),
+[log](templates/log.md).
 
-`type` is the only always-required field. Add these when supported by information
-actually available in local files or provided by the user:
+## Default bundle location
 
-- `title`: human-readable name.
-- `description`: one-sentence summary.
-- `resource`: canonical URI or local asset reference; omit for abstract concepts.
-- `tags`: cross-cutting labels.
-- `status`: `draft`, `stable`, or `deprecated`; absence means stable.
-- `stale_after`: absolute `YYYY-MM-DD` date.
-- `generated: { by, at }`: who produced the current content and when.
-- `verified`: confirmation events. Never invent verification.
-- `sources`: materials actually used to derive the concept.
-
-Actor values follow §7:
-
-- agent or producer: `<producer>/<version>`
-- person: `human:<id>`
-- automated process: `process:<id>`
-
-For newly generated documents, use `okf-local/1.0` as `generated.by` unless the
-user supplies a different actor. Use the current ISO 8601 timestamp available in
-the conversation context. Do not add `verified` unless the user explicitly says a
-person or process verified the content.
-
-For provenance:
-
-- Record only sources actually read locally or explicitly supplied by the user.
-- Every `sources` entry needs `resource`.
-- Use stable `sources[].id` values when claims need footnote attribution.
-- Attribute a specific claim with `[^source-id]` and a matching footnote.
-- A URL in `resource` is still only a recorded string in this local-only mode.
+Use `.okf/` at the repository root unless the project already uses another
+location. Commit it alongside the code it describes — knowledge as code.
 
 ## Modes
 
-### `produce` — create or extend a bundle
+### produce — create or extend a bundle
 
-1. Read `reference/SPEC.md` and inspect the local source files relevant to the
-   requested knowledge.
-2. If starting a bundle, manually create:
-   - root `index.md` with `okf_version: "0.2"`;
-   - root `log.md`;
-   - one or more concepts based on `templates/concept.md`.
-3. Derive concepts from code, local documentation, configuration, schemas, or
-   facts supplied by the user. Do not infer unsupported implementation details.
-4. Create one concept per durable unit of knowledge. Prefer knowledge explaining
-   purpose, constraints, decisions, ownership, failure modes, and operational
-   behavior rather than merely restating source code.
-5. Add or refresh directory indexes and append a dated log entry.
-6. Run the local structural check described below using file inspection only.
+**Starting a brand-new bundle?** Create a conformant `index.md`, `log.md`, and a
+`getting-started.md` concept with full recommended frontmatter using the local
+templates. Do not run the removed init script. Then extend it:
 
-### `maintain` — update a bundle after local changes
+1. Read [reference/SPEC.md](reference/SPEC.md).
+2. Pick the source(s): **code** (derive concepts from source, READMEs,
+   docstrings, config), **docs/wiki** (distill pages into concepts, record the
+   originals in `sources`), **manual** (decisions, playbooks, metrics).
+3. Choose a directory layout by domain (e.g. `services/`, `datasets/`,
+   `decisions/`). One concept per file.
+4. Write each concept from [templates/concept.md](templates/concept.md): set a
+   descriptive `type`, fill recommended fields, record `generated` and the
+   `sources` you actually read, cross-link related concepts.
+5. Add/refresh `index.md` per directory (and `okf_version: "0.2"` in the root
+   index). Append a dated entry to `log.md`.
+6. Check conformance (see below). Fix every error before finishing.
 
-1. Find affected concepts by local path, `resource`, title, tags, links, or topic.
-2. Update every affected concept in one pass.
-3. Preserve unknown frontmatter fields.
-4. Update `generated.at`; retain or update `generated.by` truthfully.
-5. Do not preserve stale verification as though it reviewed the new content. If an
-   edit invalidates a prior verification, explain the uncertainty and remove only
-   the affected verification entry when justified.
-6. Mark removed assets `status: deprecated` and document the replacement or reason
-   instead of silently deleting useful history.
-7. Update indexes and append a dated `log.md` entry.
-8. When touching v0.1 content, migrate `timestamp` to `generated.at` and body
-   `# Citations` to `sources` only when the mapping is supported by the existing
-   text. Do not invent missing actors or per-claim attribution.
+### maintain — keep a bundle in sync with reality
+1. Identify which concepts the change affects (search by `resource`, path, or
+   topic). This bookkeeping is exactly what agents are good at — touch every
+   affected file in one pass.
+2. Update the body and `generated.at` (with your own actor in `generated.by`);
+   fix or add cross-links; create new concepts for new assets; mark removed
+   assets `status: deprecated` and note the deprecation in `log.md` rather than
+   silently deleting context. Facing a whole v0.1 bundle rather than a stray
+   field? Migrate the superseded fields as part of the local edit; do not run the
+   removed validator's `--migrate` mode.
+3. Update the relevant `index.md` files and append a dated `log.md` entry
+   describing what changed.
+4. Check conformance.
 
-### `consume` — use an existing bundle as local context
+### consume — use a bundle as context
+1. Read the bundle-root `index.md` first for progressive disclosure, then follow
+   links only into the concepts relevant to the task.
+2. Weigh what you read: `status: draft`/`deprecated`, a `stale_after` already
+   past, or no `verified` entry all mean "check before relying on this". Treat
+   broken links as not-yet-written knowledge, not errors.
+3. Need a number an `Attested Computation` covers? Inspect its computation and
+   bind reasoning to the declared `parameters` — never write your own query and
+   never execute the declared computation in this local-only fork.
+4. If you learn something durable while working, switch to **maintain** and
+   write it back.
 
-1. Read the root `index.md` first.
-2. Follow only bundle links relevant to the current task.
-3. Weigh trust and lifecycle signals:
-   - `status: draft` or `deprecated` requires caution;
-   - expired `stale_after` requires local confirmation;
-   - no `verified` means unverified, not invalid.
-4. Treat broken links as missing knowledge, not conformance failures.
-5. Never execute an Attested Computation in this local-only variant. Explain what
-   it declares and which external execution would be required.
-6. Do not write changes unless the user explicitly asks to maintain the bundle.
+## Validation (do this before declaring done)
 
-### `check` — local structural review without scripts
+This local-only fork does not ship or run the deterministic Python checker.
+Inspect every non-reserved `.md` file with local file tools and apply the same
+§11 boundary: a missing or unparseable YAML frontmatter block, or a missing/empty
+`type`, is an `ERROR`. Missing recommended fields, malformed optional v0.2
+families, broken links, and superseded v0.1 constructs are warnings.
 
-Inspect all bundle `.md` files and report findings in two groups: `ERROR` and
-`WARNING`.
-
-Errors:
-
-- A non-reserved `.md` file has no complete YAML frontmatter block.
-- Its frontmatter is visibly malformed or not a mapping.
-- `type` is missing, empty, or not a string.
-
-Warnings:
-
-- Recommended `title`, `description`, or `tags` is absent.
-- `generated.by` does not follow an actor shape.
-- `generated.at` or `verified[].at` is not ISO 8601.
-- `stale_after` is not `YYYY-MM-DD`.
-- `status` is outside `draft|stable|deprecated`.
-- A `sources` entry lacks `resource`.
-- A claim footnote has no matching `sources[].id`.
-- Root `index.md` lacks `okf_version: "0.2"`.
-- An index omits an existing concept or subdirectory.
-- A local Markdown link target does not exist.
-- A concept still uses v0.1 `timestamp` or `# Citations`.
-
-State clearly that this is a file-inspection review, not the removed deterministic
-Python validator. Never install a parser or run a command to strengthen the check.
-
-## Templates
-
-Use these local templates as starting points:
-
-- [`templates/concept.md`](templates/concept.md)
-- [`templates/index.md`](templates/index.md)
-- [`templates/log.md`](templates/log.md)
-
-Adapt them to the available facts. Remove placeholder fields that are unsupported;
-do not leave angle-bracket placeholders in completed concepts.
+Resolve every `ERROR` (hard §11 failures). Warnings are soft; fix them when cheap,
+but they never block.
