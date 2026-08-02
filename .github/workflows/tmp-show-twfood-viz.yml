@@ -1,0 +1,44 @@
+name: Temporary TWFoodMCP visualization preview
+
+on:
+  pull_request:
+    branches:
+      - local-only-okf-skill
+
+permissions:
+  contents: read
+
+jobs:
+  build-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout visualizer branch
+        uses: actions/checkout@v4
+
+      - name: Checkout TWFoodMCP main
+        uses: actions/checkout@v4
+        with:
+          repository: NTUT-Vincent/TWFoodMCP
+          ref: main
+          path: twfoodmcp
+
+      - name: Verify dependency
+        run: python -c "import yaml; print(yaml.__version__)"
+
+      - name: Generate visualization
+        run: |
+          mkdir -p preview
+          python skills/visualize/scripts/okf_visualize.py \
+            twfoodmcp/knowledge \
+            -o preview/TWFoodMCP-okf-viz-new.html
+          sha256sum preview/TWFoodMCP-okf-viz-new.html > preview/SHA256SUMS.txt
+          ls -lh preview/TWFoodMCP-okf-viz-new.html
+
+      - name: Upload visualization
+        uses: actions/upload-artifact@v4
+        with:
+          name: twfoodmcp-okf-viz-new
+          path: preview/
+          retention-days: 1
+          if-no-files-found: error
