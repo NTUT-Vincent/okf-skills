@@ -109,6 +109,11 @@ svg.dragging { cursor: grabbing; }
   border: 1px solid var(--line); pointer-events: none; font-size: 12px;
 }
 .panel { overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 18px; }
+.panel.panel-updated { animation: panel-updated .42s ease-out; }
+@keyframes panel-updated { from { box-shadow: inset 6px 0 0 var(--accent); background: var(--accent-soft); } to { box-shadow: inset 0 0 0 transparent; background: var(--panel); } }
+.concept-path { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); overflow-wrap: anywhere; }
+.concept-path strong { display: block; margin-bottom: 2px; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.concept-path code { background: transparent; padding: 0; }
 .panel h1 { margin: 0 0 6px; font-size: 22px; }
 .panel h2 { margin-top: 22px; font-size: 16px; }
 .meta { display: grid; grid-template-columns: max-content 1fr; gap: 5px 12px; margin: 14px 0; }
@@ -595,8 +600,8 @@ function selectNode(id, { focus = false } = {}) {
   const tier = trustTier(node);
   const isStale = stale(node);
   panel.innerHTML = `
+    <div class="concept-path"><strong>Selected concept</strong><code>${escapeHtml(node.id)}</code></div>
     <h1>${escapeHtml(node.title)}</h1>
-    <div>${escapeHtml(node.id)}</div>
     <div class="badges">
       <span class="badge accent">${escapeHtml(node.type)}</span>
       <span class="badge">${escapeHtml(node.status || "stable")}</span>
@@ -616,6 +621,11 @@ function selectNode(id, { focus = false } = {}) {
     <h2>Cited by</h2>${listLinks(node.cited_by || [])}
     <h2>Content</h2>
     <div class="body">${renderMarkdown(node.body)}</div>`;
+panel.scrollTop = 0;
+panel.dataset.selected = id;
+panel.classList.remove("panel-updated");
+void panel.offsetWidth;
+panel.classList.add("panel-updated");
   panel.querySelectorAll("[data-open]").forEach(button => button.addEventListener("click", () => {
     const targetId = button.dataset.open;
     if (!state.visibleIds.has(targetId)) {
