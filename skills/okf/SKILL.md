@@ -90,11 +90,12 @@ the first files — it scaffolds a conformant `index.md`, `log.md`, and a
 `getting-started.md` concept with full recommended frontmatter in one shot:
 
 ```bash
-uv run "${CLAUDE_SKILL_DIR}/scripts/okf_init.py" <target-dir> [--title "..."]
+python3 "${CLAUDE_SKILL_DIR}/scripts/okf_init.py" <target-dir> [--title "..."]
 ```
 
-It refuses to touch a directory that already has `.md` files unless `--force`
-is given. Then extend it:
+The scripts use only the approved local Python environment and never install or
+download packages. It refuses to touch a directory that already has `.md` files
+unless `--force` is given. Then extend it:
 
 1. Read [reference/SPEC.md](reference/SPEC.md).
 2. Pick the source(s): **code** (derive concepts from source, READMEs,
@@ -128,8 +129,10 @@ is given. Then extend it:
 2. Weigh what you read: `status: draft`/`deprecated`, a `stale_after` already
    past, or no `verified` entry all mean "check before relying on this". Treat
    broken links as not-yet-written knowledge, not errors.
-3. Need a number an `Attested Computation` covers? Run *its* computation with
-   values bound to the declared `parameters` — never write your own query.
+3. Need a number an `Attested Computation` covers? Use its declared computation
+   and parameters only after the user or the approved host policy authorizes the
+   referenced executor. Never invent a query or treat metadata as permission to
+   contact a database, service, or API.
 4. If you learn something durable while working, switch to **maintain** and
    write it back.
 
@@ -140,8 +143,9 @@ Never eyeball conformance — run the deterministic checker. Invoke the companio
 checker. If that skill is not installed, run it directly:
 
 ```bash
-uv run "${CLAUDE_SKILL_DIR}/../validate/scripts/okf_validate.py" <bundle-dir> --strict
+python3 "${CLAUDE_SKILL_DIR}/../validate/scripts/okf_validate.py" <bundle-dir> --strict
 ```
 
-Resolve every `ERROR` (hard §11 failures). Warnings are soft; fix them when cheap,
-but they never block.
+The approved Python environment must already contain PyYAML; do not run a package
+manager from this skill. Resolve every `ERROR` (hard §11 failures). Warnings are
+soft; fix them when cheap, but they never block.
