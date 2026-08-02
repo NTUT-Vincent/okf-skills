@@ -2,10 +2,13 @@
 
 這個分支是從原始 `okf-skills` 精簡出的 **純本地版本**，用途是讓 Claude Code 或其他支援 Agent Skill 的工具，直接建立、維護、讀取與人工檢查 Open Knowledge Format (OKF) v0.2 bundle。
 
+`skills/okf/SKILL.md` 以原版內容為基準，保留原本的章節順序、核心措辭、觸發描述、OKF 規則與 produce / maintain / consume 流程；只有涉及執行腳本、安裝套件、外部連線或執行 computation 的段落做必要修改。
+
 ## 這個版本保留什麼
 
 - OKF v0.2 的 canonical `SPEC.md`
-- 建立、維護、讀取 OKF bundle 的 `SKILL.md`
+- 建立、維護、讀取 OKF bundle 的原始 skill 主體內容
+- 原版的 trigger 描述與 produce / maintain / consume 結構
 - concept、index、log 範本
 - provenance、trust、lifecycle、attestation 等 v0.2 撰寫規則
 - 不依賴程式執行的本地結構檢查清單
@@ -61,7 +64,7 @@ okf/
 使用 OKF skill，先讀取 .okf/index.md，再回答這個系統為什麼採用目前架構。
 ```
 
-此版本只在你明確要求使用 OKF 時啟用，不會因為 repo 裡存在 `.okf/` 就自動修改知識庫。
+原版對存在 OKF bundle 的 repository 所描述的觸發情境仍保留，但本地版不具有 Bash、hook、CI 或背景程序，因此不會自行執行腳本或對外連線。
 
 ## 網路與外部 API
 
