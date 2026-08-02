@@ -24,44 +24,47 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('skills/visualize/scripts/okf_visualize.py')
           text = path.read_text(encoding='utf-8')
 
-          old_css = '.panel { overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 18px; }\n.panel h1 { margin: 0 0 6px; font-size: 22px; }'
-          new_css = '''.panel { overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 18px; }
+          css_marker = '.panel { overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 18px; }'
+          css_insert = '''.panel { overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 18px; }
           .panel.panel-updated { animation: panel-updated .42s ease-out; }
           @keyframes panel-updated { from { box-shadow: inset 6px 0 0 var(--accent); background: var(--accent-soft); } to { box-shadow: inset 0 0 0 transparent; background: var(--panel); } }
           .concept-path { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); overflow-wrap: anywhere; }
           .concept-path strong { display: block; margin-bottom: 2px; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-          .concept-path code { background: transparent; padding: 0; }
-          .panel h1 { margin: 0 0 6px; font-size: 22px; }'''
-          if text.count(old_css) != 1:
-              raise SystemExit(f'CSS marker count: {text.count(old_css)}')
-          text = text.replace(old_css, new_css, 1)
+          .concept-path code { background: transparent; padding: 0; }'''
+          if text.count(css_marker) != 1:
+              raise SystemExit(f'CSS marker count: {text.count(css_marker)}')
+          text = text.replace(css_marker, css_insert, 1)
 
-          old_header = '''  panel.innerHTML = `
-              <h1>${escapeHtml(node.title)}</h1>
-              <div>${escapeHtml(node.id)}</div>'''
-          new_header = '''  panel.innerHTML = `
-              <div class="concept-path"><strong>Selected concept</strong><code>${escapeHtml(node.id)}</code></div>
-              <h1>${escapeHtml(node.title)}</h1>'''
-          if text.count(old_header) != 1:
-              raise SystemExit(f'header marker count: {text.count(old_header)}')
-          text = text.replace(old_header, new_header, 1)
+          header_pattern = re.compile(
+              r'(panel\.innerHTML\s*=\s*`\s*)<h1>\$\{escapeHtml\(node\.title\)\}</h1>\s*<div>\$\{escapeHtml\(node\.id\)\}</div>',
+              re.S,
+          )
+          text, count = header_pattern.subn(
+              r'\1<div class="concept-path"><strong>Selected concept</strong><code>${escapeHtml(node.id)}</code></div>\n    <h1>${escapeHtml(node.title)}</h1>',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'header replacement count: {count}')
 
-          old_after = '''              <div class="body">${renderMarkdown(node.body)}</div>`;
-            panel.querySelectorAll("[data-open]")'''
-          new_after = '''              <div class="body">${renderMarkdown(node.body)}</div>`;
-            panel.scrollTop = 0;
-            panel.dataset.selected = id;
-            panel.classList.remove("panel-updated");
-            void panel.offsetWidth;
-            panel.classList.add("panel-updated");
-            panel.querySelectorAll("[data-open]")'''
-          if text.count(old_after) != 1:
-              raise SystemExit(f'panel marker count: {text.count(old_after)}')
-          text = text.replace(old_after, new_after, 1)
+          body_pattern = re.compile(
+              r'(<div class="body">\$\{renderMarkdown\(node\.body\)\}</div>`;\s*)(panel\.querySelectorAll\("\[data-open\]"\))',
+              re.S,
+          )
+          panel_lines = '''\1panel.scrollTop = 0;
+          panel.dataset.selected = id;
+          panel.classList.remove("panel-updated");
+          void panel.offsetWidth;
+          panel.classList.add("panel-updated");
+          \2'''
+          text, count = body_pattern.subn(panel_lines, text, count=1)
+          if count != 1:
+              raise SystemExit(f'panel replacement count: {count}')
 
           path.write_text(text, encoding='utf-8')
           PY
