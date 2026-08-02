@@ -1,93 +1,62 @@
 # External Network / API Audit
 
-Audit scope: upstream fork state at commit `cb5c0a9973c81ea3702f677e0b8852d93b47be80`, compared with the core-skill branch.
+Audit scope: the `local-only-okf-skill` branch prepared for company repository scanning.
 
-## Summary
+## Result
 
-The OKF format itself does not require an external API. This branch keeps the original `okf`, `validate`, and `visualize` skills and their Python scripts unchanged, while removing plugin packaging, CI, benchmark, demos, tests, and other repository-level distribution material.
+The retained runtime does not contain an intentional external network client or browser dependency loader.
 
-The retained core has no direct Python HTTP client calls. Network access can still occur indirectly through dependency installation, the generated visualizer page, or an Attested Computation declared by a bundle.
+- no CDN script or stylesheet reference
+- no browser `fetch`
+- no Python HTTP client
+- no `curl` or `wget`
+- no `pip install` command in the skills
+- no `uv run` command in the skills
+- no automatic execution of a remote Attested Computation without host approval
 
-## Retained core components
+## Retained components
 
-| Component | Direct API/HTTP call in its Python logic | Possible external access |
-|---|---|---|
-| `skills/okf/SKILL.md` | N/A — instruction file | Allows `Bash`, invokes `uv run`, calls the companion validator, and instructs an Agent to run a declared Attested Computation when needed. The computation may target a database, cloud service, script, SQL engine, or API depending on the bundle. |
-| `skills/okf/scripts/okf_init.py` | No | Declares `pyyaml>=6` through PEP 723. `uv run` may download PyYAML from PyPI or another configured registry when not cached. The script itself only reads and writes local files. |
-| `skills/validate/SKILL.md` | N/A — instruction file | Runs `uv run`. Its fallback explicitly runs `python3 -m pip install --quiet pyyaml`, which can contact PyPI or a configured registry. |
-| `skills/validate/scripts/okf_validate.py` | No | After PyYAML is available, validation is local file processing. `--migrate` rewrites local bundle files in place. |
-| `skills/visualize/SKILL.md` | N/A — instruction file | Runs `uv run`. Its fallback installs PyYAML with pip. |
-| `skills/visualize/scripts/okf_visualize.py` | No Python HTTP request | The generated `viz.html` references Cytoscape, marked, and DOMPurify from `https://cdn.jsdelivr.net`. Opening the HTML in a browser causes those CDN requests unless blocked or cached. |
-
-## Removed repository-level network surfaces
-
-| Removed component | Original external access |
+| Component | Network behavior |
 |---|---|
-| `.claude-plugin/*` and marketplace installation | Claude plugin marketplace, GitHub, or skills distribution service |
-| `npx skills add` installation flow | npm/skills service and GitHub |
-| `action.yml` | `astral-sh/setup-uv@v5`, GitHub Actions infrastructure, and dependency resolution |
-| `.github/workflows/ci.yml` | GitHub-hosted runners, `actions/checkout@v4`, `setup-uv`, and package resolution |
-| GitHub Pages, badges, demo GIF, generated documentation | Browser requests to GitHub and linked remote assets |
-| Benchmark and test harness | May invoke Agent tooling or hosted model services depending on how the benchmark is executed |
+| `skills/okf/scripts/okf_init.py` | Python standard library only; local file creation. |
+| `skills/validate/scripts/okf_validate.py` | Local bundle parsing and optional local migration. It imports PyYAML but does not install it or contact a registry when invoked with `python3`. |
+| `skills/visualize/scripts/okf_visualize.py` | Local bundle parsing and local HTML generation. The generated file embeds CSS and vanilla JavaScript and does not load remote browser assets. |
+| `skills/okf/SKILL.md` | Requires explicit authorization before following an Attested Computation executor that could access a database, service, or API. |
+| `skills/validate/SKILL.md` | Invokes the checker with the approved local Python interpreter only. |
+| `skills/visualize/SKILL.md` | Invokes the offline visualizer with the approved local Python interpreter only. |
 
-## Attested Computation boundary
+## Dependency boundary
 
-An OKF `type: Attested Computation` concept can declare:
+`validate` and `visualize` require PyYAML to already exist in the approved Python environment. This repository does not include an installation command, package-lock workflow, or runtime dependency download.
 
-- `runtime`
-- `parameters`
-- `computation`
-- `executor`
-- `attester`
+Provision PyYAML through one of the company's approved mechanisms, such as a maintained base image or internal package mirror. That provisioning happens outside this repository and outside the skills.
 
-These fields are metadata until an Agent follows the original skill instruction to run the computation. At that point, external access depends entirely on the referenced executor. Examples include:
+## URL-shaped OKF metadata
 
-- BigQuery or another database
-- a local or remote script
-- a cloud SDK
-- an internal HTTP endpoint
-- an external API
-
-The repository cannot guarantee that such an execution is offline. Review each Attested Computation concept before running it.
-
-## URL-shaped fields that are inert by themselves
-
-The following values do not automatically trigger a network request:
+The following fields can contain URL-shaped strings because they are part of the OKF data model:
 
 - concept `resource`
 - `sources[].resource`
 - `executor.resource`
 - `attester.resource`
-- Markdown links in concept bodies
-- source URLs written in the vendored specification
+- Markdown link targets
 
-They become network activity only when a human, browser, script, or Agent follows them.
+The included scripts treat these values as text, paths, metadata, or graph labels. They do not retrieve their targets. An Attested Computation may access an external system only after separate authorization by the user or the host environment.
 
-## Retained file layout
+## Visualizer implementation
 
-```text
-README.md
-EXTERNAL-NETWORK-AUDIT.md
-LICENSE
-NOTICE
-skills/okf/SKILL.md
-skills/okf/scripts/okf_init.py
-skills/okf/reference/SPEC.md
-skills/okf/reference/APACHE-2.0.txt
-skills/okf/templates/concept.md
-skills/okf/templates/index.md
-skills/okf/templates/log.md
-skills/validate/SKILL.md
-skills/validate/scripts/okf_validate.py
-skills/visualize/SKILL.md
-skills/visualize/scripts/okf_visualize.py
-```
+The original visualizer depended on remote browser libraries. The company-safe variant replaces that browser layer with embedded native functionality:
 
-## Practical controls
+- SVG graph rendering
+- radial, concentric, and grid layouts
+- search and type filters
+- concept detail panel
+- trust and staleness badges
+- Markdown headings, lists, tables, code blocks, and inline formatting
+- bundle links and backlinks
 
-To reduce unintended network access while keeping the original skills:
+No third-party JavaScript files are vendored into the repository, which avoids both CDN access and large minified dependency blobs that can also trigger source scanning.
 
-1. Preinstall PyYAML in an approved environment so `uv` or pip does not need to download it at runtime.
-2. Mirror or vendor the visualizer JavaScript libraries if the generated HTML must work fully offline.
-3. Review every Attested Computation before execution and restrict Agent tools or credentials at the host level.
-4. Treat `resource` and `sources` URLs as references, not automatic permission to fetch them.
+## Scanner limitation
+
+This audit covers intentional runtime behavior and obvious static network surfaces. A company scanner may enforce additional policies, such as blocking particular licenses, dependency names, executable scripts, encoded content, or URL-shaped strings in specifications. A failed scan should be reviewed against the scanner's exact rule identifier rather than worked around blindly.
