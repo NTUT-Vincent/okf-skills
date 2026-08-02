@@ -19,7 +19,7 @@ The retained runtime does not contain an intentional external network client or 
 | Component | Network behavior |
 |---|---|
 | `skills/okf/scripts/okf_init.py` | Python standard library only; local file creation. |
-| `skills/validate/scripts/okf_validate.py` | Local bundle parsing and optional local migration. It imports PyYAML but does not install it or contact a registry when invoked with `python3`. |
+| `skills/validate/scripts/okf_validate.py` | Local bundle parsing and optional local migration. It imports PyYAML but does not install it or contact a registry. |
 | `skills/visualize/scripts/okf_visualize.py` | Local bundle parsing and local HTML generation. The generated file embeds CSS and vanilla JavaScript and does not load remote browser assets. |
 | `skills/okf/SKILL.md` | Requires explicit authorization before following an Attested Computation executor that could access a database, service, or API. |
 | `skills/validate/SKILL.md` | Invokes the checker with the approved local Python interpreter only. |
@@ -56,6 +56,14 @@ The original visualizer depended on remote browser libraries. The company-safe v
 - bundle links and backlinks
 
 No third-party JavaScript files are vendored into the repository, which avoids both CDN access and large minified dependency blobs that can also trigger source scanning.
+
+## Local verification performed
+
+- Python syntax compilation completed for the rewritten validator and visualizer.
+- A sample OKF v0.1 bundle was migrated to v0.2.
+- The migrated bundle was validated successfully without hard errors.
+- An interactive HTML file was generated from the sample bundle.
+- The generated HTML contained no CDN reference, external script source, or browser fetch call.
 
 ## Scanner limitation
 
