@@ -1,305 +1,80 @@
-<div align="center">
+# OKF Core Skills — Company-Safe Distribution
 
-# 📚 okf — the Open Knowledge Format toolkit for Claude Code
+這個分支將原始 `okf-skills` 精簡成可直接複製到公司環境使用的核心版本，保留：
 
-**Teach your coding agent to author, maintain, validate, and *visualize* portable
-knowledge bundles — markdown your team and your agents both read.**
+- `okf`：建立、維護與讀取 OKF bundle
+- `validate`：deterministic OKF v0.2 validator 與 v0.1 → v0.2 migration
+- `visualize`：產生單檔互動式 `viz.html`
+- `okf_init.py`：建立初始 bundle
 
-**On OKF v0.2** — trust signals, provenance, staleness — and the only toolkit that
-[**measured whether any of it helps**](benchmark/) instead of asserting it.
+## 為公司掃描環境調整的地方
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
-[![OKF spec](https://img.shields.io/badge/OKF-v0.2-6E56CF.svg)](skills/okf/reference/SPEC.md)
-[![benchmarked](https://img.shields.io/badge/benchmarked-85%25%20vs%2077%25-0EA5E9.svg)](benchmark/)
-[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757.svg)](https://code.claude.com/docs/en/plugins)
-[![skills.sh](https://img.shields.io/badge/skills.sh-installable-22C55E.svg)](https://skills.sh/scaccogatto/okf-skills)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-3B82F6.svg)](#contributing)
+原版核心流程與 OKF 規則維持不變，但移除了會造成下載或程式碼掃描疑慮的行為：
 
-### ▶ [**Open the live demo**](https://scaccogatto.github.io/okf-skills/) — a real OKF bundle as an interactive graph
+- 不從 CDN 載入 JavaScript
+- 不執行 `pip install`
+- 不透過 `uv run` 自動解析或下載 dependency
+- 不包含 browser `fetch`、Python HTTP client、`curl` 或 `wget`
+- 不把 OKF metadata 中的 URL 視為自動連線許可
+- Attested Computation 必須由使用者或公司核准的 host policy 明確授權後才能執行
 
-[![okf — explore an OKF bundle as an interactive graph](docs/assets/demo.gif)](https://scaccogatto.github.io/okf-skills/)
+新的 `viz.html` 只包含內嵌 CSS 與 vanilla JavaScript。產生與開啟視覺化檔案時，不需要下載任何瀏覽器套件。
 
-*Click any node → rendered markdown, the derived trust tier and staleness, provenance with its credibility signals, and "Links to / Cited by" backlinks. The last hop follows a `sources` entry — derivation is a real edge. No backend, nothing leaves the page.*
+## 保留的檔案
 
-```shell
-/plugin install okf@scaccogatto
-npx skills add scaccogatto/okf-skills
+```text
+skills/
+├── okf/
+│   ├── SKILL.md
+│   ├── scripts/okf_init.py
+│   ├── reference/
+│   │   ├── SPEC.md
+│   │   └── APACHE-2.0.txt
+│   └── templates/
+│       ├── concept.md
+│       ├── index.md
+│       └── log.md
+├── validate/
+│   ├── SKILL.md
+│   └── scripts/okf_validate.py
+└── visualize/
+    ├── SKILL.md
+    └── scripts/okf_visualize.py
 ```
 
-</div>
+另外保留 `LICENSE`、`NOTICE` 與 `EXTERNAL-NETWORK-AUDIT.md`。
 
----
+## 執行環境
 
-> [**OKF**](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing)
-> is an open, vendor-neutral format (announced by Google Cloud, June 2026) that
-> represents knowledge — the context and curated insight around your systems — as
-> a directory of markdown files with YAML frontmatter. No schema registry. No
-> runtime. No SDK. If you can `cat` a file you can read it; if you can `git clone`
-> a repo you can ship it.
+`okf_init.py` 只使用 Python standard library。
 
-This is the **Claude Code-native** OKF toolchain. It teaches Claude to **produce**,
-**maintain**, **consume**, **validate**, and **visualize** OKF bundles as a normal
-part of how it already works — driven by the *verbatim* spec, backed by a
-deterministic conformance checker, with a self-contained graph renderer. Ships as
-a **Claude Code plugin**, as **agent skills** (Cursor, Codex, and 20+ agents), and
-as a **GitHub Action** for repos with no agent at all.
+`validate` 與 `visualize` 需要公司核准的 Python 環境已經包含 PyYAML。repo 本身不會安裝套件；請由公司既有的 base image、internal package mirror 或核准的開發環境提供。
 
-Two things here you will not find elsewhere in the OKF ecosystem:
+## 安裝
 
-- **v0.2.** Provenance, trust tiers, staleness, attested computations — the
-  validator checks them, the visualizer *derives* the ones the spec says to derive,
-  and `--migrate` moves a v0.1 bundle over in one command. Every other tool in
-  [Google's community list](https://github.com/GoogleCloudPlatform/knowledge-catalog)
-  still targeted v0.1 when we checked on 2026-07-27.
-- **A number.** We ran the experiment — one repo with and without its bundle,
-  twelve fresh agents, blind grading — and [published the result](benchmark/)
-  including the part that went against us: **the bundle did not save tokens.** What
-  it did do was answer the *why* questions the code could not.
+將整個 `skills/` 複製到 Agent 工具支援的 skills 目錄，例如：
 
-## Why knowledge-as-code (and where OKF fits)
-
-Project knowledge lives scattered across wikis, code comments, and people's heads;
-agents re-discover it from scratch every session. OKF gives it one durable,
-diffable, portable home — versioned next to the code it describes. It is
-**complementary** to the rest of your context stack, not a replacement:
-
-| | **OKF bundle** (this) | `CLAUDE.md` | Claude auto-memory | Wiki / Notion |
-|---|:---:|:---:|:---:|:---:|
-| Purpose | curated **knowledge** | standing **instructions** | implicit notes | human docs |
-| Portable across agents/tools | ✅ plain md + yaml | ⚠️ Claude-specific | ❌ per-agent store | ⚠️ export needed |
-| Versioned with code in git | ✅ | ✅ | ❌ | ❌ |
-| Typed & queryable | ✅ frontmatter | ❌ prose | ❌ | ⚠️ |
-| Graph of linked concepts | ✅ | ❌ | ❌ | ⚠️ |
-| Curated & reviewed in PRs | ✅ | ✅ | ❌ implicit | ⚠️ |
-| Scales past the context window | ✅ progressive disclosure[*](benchmark/) | ❌ loaded wholesale | ⚠️ | n/a |
-
-Use `CLAUDE.md` for *how to behave*, auto-memory for *what the agent picked up*,
-and an OKF bundle for *what the team knows* — shared, structured, and shippable.
-
-> 🪞 **This repo documents itself in OKF.** The architecture, skills, and decisions
-> behind okf-skills live in [`.okf/`](.okf/) — explore them as a
-> [**live self-graph**](https://scaccogatto.github.io/okf-skills/self.html). CI
-> validates that bundle on every push (dogfooding the conformance checker).
-
-### Does it actually help? We measured it — and it is not what you'd expect
-
-Twelve fresh agents, one repository in two states (with `.okf/` and without),
-six questions, blind grading. Full method, data and the bit that went wrong:
-[`benchmark/`](benchmark/).
-
-| | with `.okf/` | without |
-|---|--:|--:|
-| ground-truth claims hit | **22/26 (85%)** | 20/26 (77%) |
-| tokens spent | 257,602 | **244,805** |
-
-**The bundle did not save tokens — it cost 5% more**, which at n=1 per cell means
-*no measurable saving in either direction*. The "read three files, not three
-thousand lines" pitch did not survive contact with a repo this size.
-
-What did hold up is narrower, and it is the reason to keep a bundle: the bundle
-arm won the two questions asking **why** — the reasons behind a decision, which
-lived in an ADR and nowhere else — and **lost** the one asking where to change
-code, where the concept was a summary that had dropped the detail the source had.
-
-So the bar this sets for your own bundle: **write down what the code cannot say.**
-A concept restating a constant measurably bought nothing. A concept recording why
-the constant is what it is answered a question the codebase could not.
-
-## What's inside
-
-| Component | What it does |
-|-----------|--------------|
-| `/okf:okf` skill | Produce / maintain / consume bundles, applying the spec and templates. Auto-triggers when a repo has an OKF bundle. |
-| `/okf:validate` skill | Deterministic §11 conformance check (not an eyeball pass). |
-| `/okf:visualize` skill | Render a bundle to a self-contained interactive HTML graph (`viz.html`). |
-| `skills/okf/scripts/okf_init.py` | Scaffold a conformant starter bundle (`index.md`, `log.md`, a starter concept) in one shot. |
-| `skills/validate/scripts/okf_validate.py` | Standalone, zero-config validator (`uv run`, PyYAML via PEP 723). |
-| `skills/visualize/scripts/okf_visualize.py` | Standalone bundle→`viz.html` renderer (Cytoscape + marked via CDN). |
-| `skills/okf/reference/SPEC.md` | The OKF v0.2 spec, vendored verbatim — the source of truth. |
-| `templates/CLAUDE-okf.md` | Snippet that turns on automatic consume/maintain in your project. |
-| `action.yml` | Composite GitHub Action — gate a bundle in any repo's CI, no Claude Code needed. |
-| `examples/sample-bundle/` | The conformant bundle behind the [live demo](https://scaccogatto.github.io/okf-skills/) — code, data, decisions, runbooks, metrics, and an attested computation. |
-
-## Install
-
-**As a Claude Code plugin** (one-plugin marketplace):
-
-```shell
-/plugin marketplace add scaccogatto/okf-skills
-/plugin install okf@scaccogatto
+```text
+<your-project>/.claude/skills/
+├── okf/
+├── validate/
+└── visualize/
 ```
 
-**As agent skills via [skills.sh](https://skills.sh/scaccogatto/okf-skills)** (Claude Code, Cursor, Codex, and 20+ agents):
+三個資料夾都應保留，因為主 `okf` skill 會使用 initializer 與 companion validator。
 
-```shell
-npx skills add scaccogatto/okf-skills            # installs the okf, validate & visualize skills
+## 使用
+
+```text
+使用 OKF skill，將這個 repo 的架構整理到 .okf/。
 ```
 
-**Local development** (no marketplace):
-
-```shell
-claude --plugin-dir /path/to/okf-skills
+```text
+/validate .okf --strict
 ```
 
-Both layouts coexist in this single repo: `.claude-plugin/` makes it a plugin
-marketplace; `skills/<name>/SKILL.md` makes it skills.sh-discoverable. The scripts
-live inside their skills and are referenced via `${CLAUDE_SKILL_DIR}`, so they work
-identically in either install path.
-
-Requires [`uv`](https://docs.astral.sh/uv/) for the scripts (or `python3` + `pyyaml`).
-
-## Use it
-
-**Capture knowledge** — ask Claude to "document the auth service in OKF", or run:
-
-```shell
-/okf:okf produce .okf
+```text
+/visualize .okf
 ```
 
-**Validate** before committing:
-
-```shell
-/okf:validate .okf --strict
-# or directly:
-uv run skills/validate/scripts/okf_validate.py .okf --strict
-# a bundle with warnings you have not got to yet, still gated in CI:
-uv run skills/validate/scripts/okf_validate.py .okf --max-warnings 5
-```
-
-**Gate it in CI** — the composite action works in any repo, with or without
-Claude Code:
-
-```yaml
-- uses: scaccogatto/okf-skills@v1
-  with:
-    bundle: .okf
-    strict: "true"      # or: max-warnings: "5"
-```
-
-**Visualize** the knowledge graph — a self-contained `viz.html` that opens in any
-browser ([live example](https://scaccogatto.github.io/okf-skills/)):
-
-```shell
-/okf:visualize .okf
-# or directly, with a title and a back-link to your repo:
-uv run skills/visualize/scripts/okf_visualize.py .okf \
-  -o viz.html --title "My project" --link "https://github.com/me/project"
-```
-
-Every concept gets a shareable deep link — open `viz.html#services/auth-api` and the
-graph loads with that concept already selected. Each panel carries two **derived**
-badges: the §5.3 trust tier (*unverified* / *machine-confirmed* / *human-reviewed*)
-and staleness, once `stale_after` is past. OKF stores neither — a stored tier is a
-stored opinion, and it goes stale — so both are computed at render time.
-
-**Turn on automatic upkeep (soft mode).** This plugin ships *no hooks* by design.
-To have Claude consult `.okf/` before tasks and write knowledge back after changes,
-paste [`templates/CLAUDE-okf.md`](templates/CLAUDE-okf.md) into your project's
-`CLAUDE.md` (or `~/.claude/CLAUDE.md` for all projects).
-
-## How a bundle looks
-
-```
-.okf/
-├── index.md                  # progressive disclosure (root carries okf_version)
-├── log.md                    # ISO-dated change history, newest first
-├── services/
-│   ├── index.md
-│   └── auth-api.md           # one concept = one file; path is its ID
-├── datasets/orders-db.md
-├── decisions/use-okf.md
-├── runbooks/payment-failures.md
-└── metrics/checkout-conversion.md
-```
-
-Each concept needs only one thing to be conformant: YAML frontmatter with a
-non-empty `type`. Everything else is optional and tolerated when missing.
-
-```markdown
----
-type: Service
-title: Auth API
-description: Issues and verifies short-lived access tokens.
-resource: https://github.com/acme/auth
-tags: [auth, platform]
-status: stable
-generated: { by: doc_agent/1.0, at: 2026-06-14T10:00:00Z }
-verified: { by: human:dana, at: 2026-06-20T09:00:00Z }
-sources:
-  - id: auth-readme
-    resource: https://github.com/acme/auth#readme
-    title: Auth service README
----
-
-# Endpoints
-| Method | Path     | Description                |
-|--------|----------|----------------------------|
-| `POST` | `/token` | Exchange creds for a JWT.  |
-
-Tokens live 15 minutes.[^auth-readme]
-
-[^auth-readme]: Auth service README
-```
-
-## What OKF v0.2 adds
-
-v0.2 assumes a corpus that agents keep writing, so it makes four things
-answerable from frontmatter alone. All optional; a concept carrying only `type`
-is still fully conformant.
-
-| Family | Fields | Answers |
-|--------|--------|---------|
-| **Provenance** | `sources[]` + `author` / `usage_count` / `last_modified`, `usage_window` | Where did this come from, and how credible is that source? |
-| **Trust** | `generated: {by, at}`, `verified[]`, actor convention (`human:` / `process:` / `agent/version`) | Who wrote it, who confirmed it? |
-| **Lifecycle** | `status`, `stale_after` | Is it current? Is it still true? |
-| **Attestation** | `type: Attested Computation` + `runtime`, `parameters`, `executor`, `attester` | Was this number produced the sanctioned way? |
-
-Two v0.1 constructs are superseded: `timestamp` → `generated.at`, and the body
-`# Citations` list → `sources` (with per-claim attribution via markdown
-footnotes keyed to a source's `id`).
-
-**Upgrading from v0.1?** One command:
-
-```shell
-uv run skills/validate/scripts/okf_validate.py .okf --migrate --strict
-```
-
-Nothing breaks in the meantime. The validator and visualizer read both — a legacy
-`timestamp` is used as `generated.at` — and report the two superseded constructs
-as *warnings* naming their replacement, never errors. `--strict` does refuse an
-unmigrated bundle: that is the nudge, and `--migrate` is the door. The rewrite is
-textual (your comments, key order and quoting survive) and idempotent.
-
-Two things it will not invent: `generated.by` for content written before the
-field existed — it records `process:okf-migrate`, leaving the concept correctly
-*unverified* rather than faking a human review — and per-claim `[^id]`
-attribution, which v0.1 never encoded.
-
-## Repository layout
-
-```
-okf-skills/
-├── .claude-plugin/{plugin.json, marketplace.json}
-├── skills/okf/{SKILL.md, reference/SPEC.md, templates/}
-├── skills/validate/{SKILL.md, scripts/okf_validate.py}
-├── skills/visualize/{SKILL.md, scripts/okf_visualize.py}
-├── examples/sample-bundle/      # the live-demo bundle
-├── docs/                        # GitHub Pages: the live interactive demo
-├── templates/CLAUDE-okf.md
-├── Makefile                     # make docs / test / validate — CI runs the same
-└── .github/workflows/ci.yml
-```
-
-## Contributing
-
-Issues and PRs welcome — new templates, producers for more sources, validator and
-visualizer improvements. CI validates the plugin manifest and the example bundle on
-every push.
-
-## Credits & license
-
-- The **Open Knowledge Format** specification is by the Google Cloud Data Cloud
-  team, released under Apache-2.0. `skills/okf/reference/SPEC.md` is vendored
-  verbatim from the [reference repository](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
-  with attribution.
-- This plugin's own code and content: **MIT** © Marco Boffo ([@scaccogatto](https://github.com/scaccogatto)).
+實際能否通過公司掃描仍取決於公司規則；這個分支已去除已知的 runtime download、CDN script 與直接網路呼叫面。

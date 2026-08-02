@@ -16,19 +16,13 @@ Run the deterministic conformance checker against the target bundle. Default to
 the project's `.okf/` directory when no path is given.
 
 ```bash
-uv run "${CLAUDE_SKILL_DIR}/scripts/okf_validate.py" $ARGUMENTS
-```
-
-If `uv` is unavailable, fall back to:
-
-```bash
-python3 -m pip install --quiet pyyaml && \
 python3 "${CLAUDE_SKILL_DIR}/scripts/okf_validate.py" $ARGUMENTS
 ```
 
-`${CLAUDE_SKILL_DIR}` resolves whether this skill runs as part of the `okf`
-plugin or is installed standalone (e.g. via `npx skills add`), so the checker is
-always found alongside the skill.
+The approved Python environment must already contain PyYAML. This skill never
+runs `pip`, `uv`, or another package manager, and it does not download dependencies.
+
+`${CLAUDE_SKILL_DIR}` resolves the checker alongside the installed skill.
 
 Interpret the result:
 
@@ -58,7 +52,7 @@ a bundle the user has not asked to migrate. It is textual (comments, key order
 and quoting survive) and idempotent.
 
 ```bash
-uv run "${CLAUDE_SKILL_DIR}/scripts/okf_validate.py" .okf --migrate --strict
+python3 "${CLAUDE_SKILL_DIR}/scripts/okf_validate.py" .okf --migrate --strict
 ```
 
 It hoists `timestamp` to `generated: { by: process:okf-migrate, at }`, lifts a
@@ -72,4 +66,4 @@ source list moves up.
 
 Non-zero if any error is present, or if warnings exceed the gate:
 `--strict` allows none, `--max-warnings N` allows N, the default allows any.
-Add `--json` for machine-readable output (useful in CI).
+Add `--json` for machine-readable output.
