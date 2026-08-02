@@ -10,7 +10,7 @@ description: >-
   "capture this as a concept", or any work in a repo that has an OKF bundle.
 user-invocable: true
 argument-hint: "[produce|maintain|consume] [path]"
-allowed-tools: Read Write Edit Grep Glob
+allowed-tools: Read Write Edit Grep Glob Bash
 ---
 
 # Open Knowledge Format (OKF) skill
@@ -23,13 +23,6 @@ memory of it.
 **Always read the canonical spec before non-trivial work:**
 [reference/SPEC.md](reference/SPEC.md). It is the verbatim OKF v0.2 specification
 and the source of truth for every rule below.
-
-## Local-only constraint
-
-This fork omits the executable helper layer. Use only local file tools: do not run
-shell commands, install packages, browse or fetch URLs, call external APIs or MCP
-tools, or execute an Attested Computation's query, executor, or attester. URL-like
-`resource` values remain metadata unless the user separately requests research.
 
 ## The one hard rule
 
@@ -73,13 +66,12 @@ fields, unknown types, and broken links — never reject a bundle over them.
   `type: Attested Computation`, carrying `runtime` (required), `parameters`,
   `executor`, `attester`, and the computation itself under `# Computation` (or a
   `computation:` path). Concepts that need the value link to it. Never inline a
-  number's SQL into the concept that narrates it. In this local-only fork, record
-  and inspect the contract but do not execute it.
+  number's SQL into the concept that narrates it.
 
 **Reading a v0.1 bundle?** Two constructs were superseded (§13.1): `timestamp`
 is now `generated.at`, and a body `# Citations` list is now `sources`. Read both,
 write v0.2 — and when you touch a legacy concept in **maintain** mode, migrate
-its frontmatter as part of the edit. Treat both superseded constructs as warnings.
+its frontmatter as part of the edit. The validator warns on both.
 
 Templates to copy: [concept](templates/concept.md), [index](templates/index.md),
 [log](templates/log.md).
@@ -93,9 +85,16 @@ location. Commit it alongside the code it describes — knowledge as code.
 
 ### produce — create or extend a bundle
 
-**Starting a brand-new bundle?** Create a conformant `index.md`, `log.md`, and a
-`getting-started.md` concept with full recommended frontmatter using the local
-templates. Do not run the removed init script. Then extend it:
+**Starting a brand-new bundle?** Use the init fast-path instead of hand-writing
+the first files — it scaffolds a conformant `index.md`, `log.md`, and a
+`getting-started.md` concept with full recommended frontmatter in one shot:
+
+```bash
+uv run "${CLAUDE_SKILL_DIR}/scripts/okf_init.py" <target-dir> [--title "..."]
+```
+
+It refuses to touch a directory that already has `.md` files unless `--force`
+is given. Then extend it:
 
 1. Read [reference/SPEC.md](reference/SPEC.md).
 2. Pick the source(s): **code** (derive concepts from source, READMEs,
@@ -108,7 +107,7 @@ templates. Do not run the removed init script. Then extend it:
    `sources` you actually read, cross-link related concepts.
 5. Add/refresh `index.md` per directory (and `okf_version: "0.2"` in the root
    index). Append a dated entry to `log.md`.
-6. Check conformance (see below). Fix every error before finishing.
+6. Validate (see below). Fix every error before finishing.
 
 ### maintain — keep a bundle in sync with reality
 1. Identify which concepts the change affects (search by `resource`, path, or
@@ -118,11 +117,10 @@ templates. Do not run the removed init script. Then extend it:
    fix or add cross-links; create new concepts for new assets; mark removed
    assets `status: deprecated` and note the deprecation in `log.md` rather than
    silently deleting context. Facing a whole v0.1 bundle rather than a stray
-   field? Migrate the superseded fields as part of the local edit; do not run the
-   removed validator's `--migrate` mode.
+   field? Do not hand-edit it — run the validator's `--migrate` once.
 3. Update the relevant `index.md` files and append a dated `log.md` entry
    describing what changed.
-4. Check conformance.
+4. Validate.
 
 ### consume — use a bundle as context
 1. Read the bundle-root `index.md` first for progressive disclosure, then follow
@@ -130,19 +128,20 @@ templates. Do not run the removed init script. Then extend it:
 2. Weigh what you read: `status: draft`/`deprecated`, a `stale_after` already
    past, or no `verified` entry all mean "check before relying on this". Treat
    broken links as not-yet-written knowledge, not errors.
-3. Need a number an `Attested Computation` covers? Inspect its computation and
-   bind reasoning to the declared `parameters` — never write your own query and
-   never execute the declared computation in this local-only fork.
+3. Need a number an `Attested Computation` covers? Run *its* computation with
+   values bound to the declared `parameters` — never write your own query.
 4. If you learn something durable while working, switch to **maintain** and
    write it back.
 
 ## Validation (do this before declaring done)
 
-This local-only fork does not ship or run the deterministic Python checker.
-Inspect every non-reserved `.md` file with local file tools and apply the same
-§11 boundary: a missing or unparseable YAML frontmatter block, or a missing/empty
-`type`, is an `ERROR`. Missing recommended fields, malformed optional v0.2
-families, broken links, and superseded v0.1 constructs are warnings.
+Never eyeball conformance — run the deterministic checker. Invoke the companion
+**`validate`** skill (`/okf:validate <bundle-dir> --strict`), which ships the
+checker. If that skill is not installed, run it directly:
+
+```bash
+uv run "${CLAUDE_SKILL_DIR}/../validate/scripts/okf_validate.py" <bundle-dir> --strict
+```
 
 Resolve every `ERROR` (hard §11 failures). Warnings are soft; fix them when cheap,
 but they never block.
