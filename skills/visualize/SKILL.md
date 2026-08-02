@@ -14,19 +14,16 @@ allowed-tools: Bash
 
 # Visualize an OKF bundle
 
-Generate a self-contained HTML graph of the target bundle (default the project's
-`.okf/`). No backend, no install on the viewing side, no data leaves the page.
+Generate a fully offline, self-contained HTML graph of the target bundle
+(default the project's `.okf/`). No backend, no install on the viewing side, no
+remote browser assets, and no data leaves the page.
 
 ```bash
-uv run "${CLAUDE_SKILL_DIR}/scripts/okf_visualize.py" $ARGUMENTS
-```
-
-If `uv` is unavailable:
-
-```bash
-python3 -m pip install --quiet pyyaml && \
 python3 "${CLAUDE_SKILL_DIR}/scripts/okf_visualize.py" $ARGUMENTS
 ```
+
+The approved Python environment must already contain PyYAML. This skill never
+runs a package manager or downloads dependencies.
 
 The detail panel shows each concept's `status`, `generated`, `verified`,
 `stale_after`, and `sources` (with their credibility signals, a `usage_count`
@@ -41,8 +38,9 @@ advisory signals — when reporting on a bundle, say which tier a concept is in
 rather than treating any of them as a gate.
 
 The output defaults to `<bundle>/viz.html`. Pass `-o <path>` to write elsewhere.
-Bundles above 1,000 concepts default to the linear `concentric` layout (the
-force layout freezes the page at that size — `--layout cose` overrides), and
-`--max-nodes N` refuses oversized bundles, e.g. for CI.
-Open it in any browser; `${CLAUDE_SKILL_DIR}` resolves whether this runs as part
-of the `okf` plugin or as a standalone skills.sh skill.
+Bundles above 1,000 concepts default to the linear `concentric` layout, while
+`--layout cose` and `--layout grid` remain available. `--max-nodes N` refuses
+oversized bundles, e.g. for controlled internal use.
+
+The generated file embeds its CSS, graph renderer, markdown renderer, filtering,
+search, and detail-panel logic. Opening it does not request CDN assets.
