@@ -1,0 +1,78 @@
+name: Build and test improved offline visualizer
+
+on:
+  push:
+    branches:
+      - tmp/perfect-offline-visualizer-20260802
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout temporary branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout complete TWFoodMCP knowledge bundle
+        uses: actions/checkout@v4
+        with:
+          repository: NTUT-Vincent/TWFoodMCP
+          ref: main
+          path: twfoodmcp
+
+      - name: Rebuild visualizer from staged payload
+        shell: bash
+        run: |
+          cat .tmp-perfect-viz/gz-aa .tmp-perfect-viz/gz-ab | base64 --decode | gzip --decompress > skills/visualize/scripts/okf_visualize.py
+          chmod +x skills/visualize/scripts/okf_visualize.py
+
+      - name: Prepare approved test dependency
+        run: python -m pip install --disable-pip-version-check PyYAML
+
+      - name: Test Python and full TWFoodMCP visualization
+        shell: bash
+        run: |
+          python -m py_compile skills/visualize/scripts/okf_visualize.py
+          python skills/visualize/scripts/okf_visualize.py twfoodmcp/knowledge -o /tmp/twfoodmcp-viz.html
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path('/tmp/twfoodmcp-viz.html').read_text(encoding='utf-8')
+          required = [
+              'function clusterLayout',
+              'function fitBounds',
+              'addEventListener("wheel"',
+              'addEventListener("pointerdown"',
+              'id="viewport"',
+              'id="group"',
+              'value="cluster"',
+          ]
+          for marker in required:
+              assert marker in html, marker
+          assert not re.search(r'<script[^>]+src=', html, re.I)
+          assert not re.search(r'<link[^>]+stylesheet', html, re.I)
+          assert not re.search(r'\bfetch\s*\(', html)
+          assert not re.search(r'jsdelivr|unpkg|cdn\.', html, re.I)
+          match = re.search(r'<script>\n(.*)\n</script>', html, re.S)
+          assert match
+          Path('/tmp/twfoodmcp-viz.js').write_text(match.group(1), encoding='utf-8')
+          print(f'html_size_bytes={Path("/tmp/twfoodmcp-viz.html").stat().st_size}')
+          PY
+          node --check /tmp/twfoodmcp-viz.js
+
+      - name: Commit final clean branch content
+        shell: bash
+        run: |
+          rm -rf .tmp-perfect-viz
+          rm -f .github/workflows/tmp-perfect-visualizer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A skills/visualize/scripts/okf_visualize.py .tmp-perfect-viz .github/workflows/tmp-perfect-visualizer.yml
+          git commit -m "feat: make offline visualizer scale to large bundles [skip ci]"
+          git push origin HEAD:tmp/perfect-offline-visualizer-20260802
