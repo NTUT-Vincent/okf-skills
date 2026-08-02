@@ -4,7 +4,7 @@ Audit scope: upstream fork state at commit `cb5c0a9973c81ea3702f677e0b8852d93b47
 
 ## Summary
 
-The OKF file format itself does not require an external API. The original toolkit adds several execution and distribution surfaces that may access the network. This branch removes those surfaces and keeps only local Markdown/YAML authoring instructions, templates, the normative specification, and license files.
+The OKF file format itself does not require an external API. The original toolkit adds several execution and distribution surfaces that may access the network. This branch removes those surfaces and keeps only local Markdown/YAML authoring instructions, templates, the normative specification, attribution notices, and license files.
 
 ## Original components that may access the network
 
@@ -42,6 +42,7 @@ Included files:
 README.md
 EXTERNAL-NETWORK-AUDIT.md
 LICENSE
+NOTICE
 skills/okf/SKILL.md
 skills/okf/reference/SPEC.md
 skills/okf/reference/APACHE-2.0.txt
