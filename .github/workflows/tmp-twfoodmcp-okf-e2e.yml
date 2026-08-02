@@ -46,6 +46,11 @@ jobs:
           validate_code=$?
           printf 'validate_exit_code=%s\n' "$validate_code" >> results/summary.txt
 
+          python okf-skills/skills/validate/scripts/okf_validate.py twfood/knowledge --strict --json \
+            > results/validate-strict.json 2> results/validate-strict.stderr.txt
+          strict_code=$?
+          printf 'validate_strict_exit_code=%s\n' "$strict_code" >> results/summary.txt
+
           python okf-skills/skills/visualize/scripts/okf_visualize.py twfood/knowledge \
             -o results/twfoodmcp-viz.html --layout concentric \
             > results/visualize.stdout.txt 2> results/visualize.stderr.txt
@@ -63,6 +68,8 @@ jobs:
           checks = {
               'html_exists': html.exists(),
               'html_size_bytes': html.stat().st_size if html.exists() else 0,
+              'node_count': 0,
+              'edge_count': 0,
               'external_script_src_count': 0,
               'external_stylesheet_count': 0,
               'browser_fetch_count': 0,
@@ -74,6 +81,11 @@ jobs:
               checks['external_stylesheet_count'] = len(re.findall(r'<link[^>]+rel=["\']stylesheet["\']', text, re.I))
               checks['browser_fetch_count'] = len(re.findall(r'\bfetch\s*\(', text))
               checks['cdn_keyword_count'] = len(re.findall(r'cdn\.|jsdelivr|unpkg', text, re.I))
+              match = re.search(r'const DATA = (.*?);\nconst state =', text, re.S)
+              if match:
+                  payload = json.loads(match.group(1).replace('<\\/', '</'))
+                  checks['node_count'] = len(payload.get('nodes', []))
+                  checks['edge_count'] = len(payload.get('edges', []))
           (results / 'offline-checks.json').write_text(
               json.dumps(checks, ensure_ascii=False, indent=2) + '\n',
               encoding='utf-8',
