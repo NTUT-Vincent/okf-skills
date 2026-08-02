@@ -1,30 +1,21 @@
 #!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["pyyaml>=6"]
-# ///
 """Scaffold a conformant starter Open Knowledge Format (OKF) v0.2 bundle.
 
-Creates a root `index.md` (frontmatter carries only `okf_version`), a `log.md`
-with a creation entry under today's ISO date heading, and one starter concept
-(`getting-started.md`) with the full set of recommended frontmatter fields.
-The scaffold is meant to be exemplary: `okf_validate.py --strict` should pass
-it with zero warnings.
+Creates a root `index.md`, a `log.md`, and one starter concept. This company-safe
+variant uses only the Python standard library and performs local file I/O only.
 
-Run:  uv run scripts/okf_init.py <target-dir> [--title "..."] [--force]
+Run: python3 scripts/okf_init.py <target-dir> [--title "..."] [--force]
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
-
 OKF_VERSION = "0.2"
 STARTER_CONCEPT = "getting-started.md"
-# Actor convention (§7): an automated process, not an agent with a version.
 ACTOR = "process:okf_init"
 
 
@@ -33,14 +24,16 @@ def humanize(name: str) -> str:
     return words.title() if words else "Untitled"
 
 
-def frontmatter(meta: dict) -> str:
-    return "---\n" + yaml.safe_dump(meta, sort_keys=False, allow_unicode=True) + "---\n"
+def yaml_string(value: str) -> str:
+    """JSON strings are valid YAML scalars and avoid a YAML runtime dependency."""
+    return json.dumps(value, ensure_ascii=False)
 
 
 def build_index(title: str) -> str:
-    meta = frontmatter({"okf_version": OKF_VERSION})
     return (
-        f"{meta}\n"
+        "---\n"
+        f"okf_version: {yaml_string(OKF_VERSION)}\n"
+        "---\n\n"
         f"# {title}\n\n"
         f"* [Getting started]({STARTER_CONCEPT}) - starting point for this bundle.\n"
     )
@@ -56,16 +49,18 @@ def build_log(today: str, title: str) -> str:
 
 
 def build_concept(title: str, now_iso: str) -> str:
-    meta = frontmatter({
-        "type": "Reference",
-        "title": f"Getting started — {title}",
-        "description": f"Starting point for the {title} OKF bundle.",
-        "tags": ["getting-started"],
-        "status": "stable",
-        "generated": {"by": ACTOR, "at": now_iso},
-    })
     return (
-        f"{meta}\n"
+        "---\n"
+        "type: Reference\n"
+        f"title: {yaml_string(f'Getting started — {title}')}\n"
+        f"description: {yaml_string(f'Starting point for the {title} OKF bundle.')}\n"
+        "tags:\n"
+        "  - getting-started\n"
+        "status: stable\n"
+        "generated:\n"
+        f"  by: {yaml_string(ACTOR)}\n"
+        f"  at: {yaml_string(now_iso)}\n"
+        "---\n\n"
         "# Overview\n\n"
         "This is the first concept in a freshly scaffolded OKF bundle. Replace "
         "it with real knowledge — one concept per file, cross-linked with "
@@ -75,11 +70,11 @@ def build_concept(title: str, now_iso: str) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=f"Scaffold a starter OKF v{OKF_VERSION} bundle.")
-    ap.add_argument("target", type=Path, help="directory to create the bundle in")
-    ap.add_argument("--title", default=None, help="bundle title (default: humanized target dir name)")
-    ap.add_argument("--force", action="store_true", help="scaffold even if the target already has .md files")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description=f"Scaffold a starter OKF v{OKF_VERSION} bundle.")
+    parser.add_argument("target", type=Path, help="directory to create the bundle in")
+    parser.add_argument("--title", default=None, help="bundle title (default: humanized target dir name)")
+    parser.add_argument("--force", action="store_true", help="scaffold even if the target already has .md files")
+    args = parser.parse_args()
 
     if args.target.exists() and not args.target.is_dir():
         print(f"error: {args.target} exists and is not a directory", file=sys.stderr)
@@ -88,8 +83,8 @@ def main() -> int:
     existing_md = list(args.target.rglob("*.md")) if args.target.is_dir() else []
     if existing_md and not args.force:
         print(f"refusing: {args.target} already contains .md files (pass --force to scaffold anyway)", file=sys.stderr)
-        for p in sorted(existing_md)[:5]:
-            print(f"  {p.relative_to(args.target)}", file=sys.stderr)
+        for path in sorted(existing_md)[:5]:
+            print(f"  {path.relative_to(args.target)}", file=sys.stderr)
         return 1
 
     title = args.title or humanize(args.target.resolve().name)
@@ -103,7 +98,7 @@ def main() -> int:
 
     validator = Path(__file__).resolve().parents[2] / "validate" / "scripts" / "okf_validate.py"
     print(f"created OKF bundle scaffold at {args.target}")
-    print(f"hint: validate it — uv run {validator} {args.target} --strict (or the validate skill)")
+    print(f"hint: validate it — python3 {validator} {args.target} --strict")
     return 0
 
 
