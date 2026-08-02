@@ -678,6 +678,9 @@ const pointers = new Map();
 let dragStart = null;
 let pinchStart = null;
 svg.addEventListener("pointerdown", event => {
+  if (event.button !== undefined && event.button !== 0) return;
+  const interactive = event.target.closest?.(".node, .group-label");
+  if (interactive) return;
   svg.setPointerCapture(event.pointerId);
   const point = clientToSvg(event.clientX, event.clientY);
   pointers.set(event.pointerId, point);
