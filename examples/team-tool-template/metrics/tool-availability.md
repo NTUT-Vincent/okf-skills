@@ -24,7 +24,7 @@ stale_after: 2027-02-03
 
 # Definition
 
-Tool Availability measures how much scheduled production time a Tool can actually be used.
+Tool Availability measures how much scheduled production time a Tool can actually be used.[^tool-manual]
 
 # Formula
 
