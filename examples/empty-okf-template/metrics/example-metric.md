@@ -1,7 +1,7 @@
 ---
 type: Metric
 title: Replace with a clear metric name
-description: Replace with a one-sentence summary of what the metric measures.
+description: Replace with a one-sentence definition of the metric.
 status: draft
 
 # Optional fields — uncomment and replace when applicable.
@@ -12,7 +12,6 @@ status: draft
 #   - id: primary-source
 #     resource: ../references/example-reference.md
 #     title: Replace with source title
-#     author: team:source-owner
 # generated:
 #   by: human:your-id
 #   at: 2026-08-04T00:00:00Z
@@ -24,30 +23,31 @@ status: draft
 
 # Definition
 
-Explain exactly what this metric measures and what it does not measure.
+Define exactly what the metric measures and why it matters.[^primary-source]
 
 # Formula
 
 ```text
-Replace with formula or calculation rule
+Replace With Numerator / Replace With Denominator × 100%
 ```
 
-# Inputs
+# Dimensions
 
-| Input | Meaning | Source |
-|---|---|---|
-| Replace | Replace | Replace |
+- Replace with an allowed grouping or filter.
+- Replace with a required reporting period.
 
 # Interpretation
 
-- Explain what a higher value means.
-- Explain what a lower value means.
-- Document known caveats or comparison limits.[^primary-source]
+Explain what a higher or lower value means and which caveats must be checked.
+
+# Example
+
+Provide a small calculation using placeholder values.
 
 # Related Knowledge
 
 - Measures [Example Tool](../tools/example-tool.md).
-- May change after [Example Procedure](../procedures/example-procedure.md).
-- See [Example Reference](../references/example-reference.md).
+- May be affected by [Example Procedure](../procedures/example-procedure.md).
+- Defined by [Example Reference](../references/example-reference.md).
 
 [^primary-source]: Replace with the source title.

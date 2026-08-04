@@ -11,7 +11,6 @@ status: draft
 #   - id: primary-source
 #     resource: ../references/example-reference.md
 #     title: Replace with source title
-#     author: team:source-owner
 # generated:
 #   by: human:your-id
 #   at: 2026-08-04T00:00:00Z
@@ -23,31 +22,31 @@ status: draft
 
 # Purpose
 
-Explain what this procedure accomplishes and when it should be used.
+Explain the outcome this procedure is intended to achieve.
+
+# Scope
+
+Describe when the procedure applies and which Tool or team owns it.
 
 # Preconditions
 
 - Replace with a required condition.
-- Replace with required access, data, or equipment.
+- Replace with a required permission, state, or input.
 
 # Steps
 
-1. Replace with the first action.
-2. Replace with the next action.
-3. Record or verify the result.[^primary-source]
+1. Replace with the first step.
+2. Replace with the next step.
+3. Record the result and handle exceptions according to the source.[^primary-source]
 
 # Completion Criteria
 
-Describe the observable condition that means the procedure is complete.
-
-# Exceptions and Escalation
-
-Describe when the normal flow stops and who should be contacted.
+Explain how the operator knows the procedure is complete.
 
 # Related Knowledge
 
 - Applies to [Example Tool](../tools/example-tool.md).
-- Impacts [Example Metric](../metrics/example-metric.md).
-- See [Example Reference](../references/example-reference.md).
+- Affects [Example Metric](../metrics/example-metric.md).
+- Based on [Example Reference](../references/example-reference.md).
 
 [^primary-source]: Replace with the source title.

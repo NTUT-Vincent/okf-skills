@@ -1,11 +1,11 @@
 ---
 type: Reference Document
 title: Replace with a clear source title
-description: Replace with a one-sentence summary of this source.
+description: Replace with a one-sentence description of the source.
 status: draft
 
 # Optional fields — uncomment and replace when applicable.
-# resource: https://replace-with-source-location
+# resource: https://replace-with-authoritative-source
 # tags:
 #   - reference
 # generated:
@@ -19,19 +19,23 @@ status: draft
 
 # Scope
 
-Explain which domain, Tool, Procedure, or Metric this source covers.
+Explain what knowledge this source covers and who owns it.
 
-# Authoritative Statements
+# Key Requirements
 
-- Replace with a source-backed rule or fact.
-- Replace with another rule or fact.
+- Replace with a requirement cited by another concept.
+- Replace with a rule, threshold, or constraint.
 
-# Ownership and Update Policy
+# Source Quality
 
-Document who owns this source and how changes should be reviewed.
+Describe why this source is authoritative and how often it should be reviewed.
 
-# Related Knowledge
+# Referenced By
 
-- Supports [Example Tool](../tools/example-tool.md).
-- Supports [Example Procedure](../procedures/example-procedure.md).
-- Supports [Example Metric](../metrics/example-metric.md).
+- [Example Tool](../tools/example-tool.md)
+- [Example Procedure](../procedures/example-procedure.md)
+- [Example Metric](../metrics/example-metric.md)
+
+# Template Note
+
+Replace this concept with a real source document or a concise reference concept that links to the authoritative resource.

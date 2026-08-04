@@ -1,5 +1,5 @@
 # Metrics
 
-Use this directory for metric definitions, formulas, interpretation, and ownership.
+Use this directory for definitions, formulas, dimensions, and interpretation rules.
 
-- [Example Metric](example-metric.md) — placeholder showing a metric definition and links to its Tool and Procedure.
+- [Example Metric](example-metric.md) — placeholder demonstrating a metric linked to Tool, Procedure, and Reference concepts.
